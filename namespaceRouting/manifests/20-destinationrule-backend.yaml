@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: backend
+  namespace: ${NAMESPACE}
+spec:
+  host: backend.${NAMESPACE}.svc.cluster.local
+  # subsets: unterteilen die Pods hinter dem Service "backend" anhand ihres
+  # "version"-Labels in zwei separat ansprechbare Gruppen
+  subsets:
+    - name: extern
+      labels:
+        version: extern
+    - name: intern
+      labels:
+        version: intern
