@@ -13,8 +13,9 @@ ratelimits/
   run.sh                      # startet den Lasttest
   manifests/
     00-namespace.yaml                    # Namespace (Default: ratelimit-demo, istio-injection: enabled)
-    10-nginx-deployment.yaml             # Deployment nginx, replicas: 2
-    11-nginx-service.yaml                # ClusterIP Service nginx
+    05-nginx-configmap.yaml              # ConfigMap mit nginx.conf (Server lauscht auf Port 8080)
+    10-nginx-deployment.yaml             # Deployment nginx, replicas: 2, containerPort 8080
+    11-nginx-service.yaml                # ClusterIP Service nginx (port 80 -> targetPort 8080)
     20-envoyfilter-local-ratelimit.yaml  # Envoy Local Rate Limit auf den nginx-Sidecars
   test/
     loadtest-pod.yaml          # Pod-Template für den Lasttest-Container (curl-Schleife)
@@ -33,8 +34,8 @@ ratelimits/
 ```
 
 Existiert der angegebene Namespace bereits, wird `00-namespace.yaml` übersprungen
-(kein erneutes Anlegen/Überschreiben) — nur Deployment, Service und EnvoyFilter
-werden in diesen bestehenden Namespace appliziert.
+(kein erneutes Anlegen/Überschreiben) — nur ConfigMap, Deployment, Service und
+EnvoyFilter werden in diesen bestehenden Namespace appliziert.
 
 Führt intern aus (Platzhalter `${NAMESPACE}` in den Manifesten werden per `sed`
 durch den gewählten Namespace ersetzt):
@@ -42,12 +43,17 @@ durch den gewählten Namespace ersetzt):
 ```bash
 kubectl get namespace <namespace>                       # Existenzprüfung
 sed "s|\${NAMESPACE}|<namespace>|g" manifests/00-namespace.yaml | kubectl apply -f -   # nur falls Namespace neu
+sed "s|\${NAMESPACE}|<namespace>|g" manifests/05-nginx-configmap.yaml | kubectl apply -f -
 sed "s|\${NAMESPACE}|<namespace>|g" manifests/10-nginx-deployment.yaml | kubectl apply -f -
 sed "s|\${NAMESPACE}|<namespace>|g" manifests/11-nginx-service.yaml | kubectl apply -f -
 sed "s|\${NAMESPACE}|<namespace>|g" manifests/20-envoyfilter-local-ratelimit.yaml | kubectl apply -f -
 kubectl -n <namespace> rollout status deployment/nginx --timeout=120s
 kubectl -n <namespace> get deploy,svc,envoyfilter
 ```
+
+Die `nginx.conf` in der ConfigMap lässt den Server auf Port `8080` statt dem
+Standard-Port `80` lauschen (unter `/etc/nginx/nginx.conf` per `subPath` gemountet)
+— das vermeidet, dass der Prozess an einen privilegierten Port < 1024 binden muss.
 
 **Hinweis:** Wird ein bereits existierender Namespace verwendet, muss dieser für
 das EnvoyFilter-Rate-Limiting selbst das Label `istio-injection: enabled` tragen
