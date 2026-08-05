@@ -111,6 +111,24 @@ x-local-rate-limit: true
 Aktuell ist im EnvoyFilter (`manifests/20-envoyfilter-local-ratelimit.yaml`) ein
 Token-Bucket von 5 Tokens/30s hinterlegt.
 
+## Kombinierter Einsatz mit `ratelimitService/`
+
+Dieser Usecase lässt sich gefahrlos zusammen mit
+[`ratelimitService/`](../ratelimitService/readme.md) **im selben Namespace**
+installieren: `nginx`-ConfigMap, -Deployment und -Service sind in beiden
+Verzeichnissen byte-identisch (das zweite `apply` ist also ein No-Op), und alle
+übrigen Ressourcennamen (EnvoyFilter, Redis, Ratelimit-Service) sind eindeutig
+und kollidieren nicht.
+
+```bash
+./ratelimits/install.sh demo
+./ratelimitService/install.sh demo
+```
+
+Ergebnis: Auf den `nginx`-Pods greifen dann **beide** Mechanismen gleichzeitig —
+der lokale Token-Bucket pro Sidecar **und** das globale, Redis-gestützte Limit.
+Ein Request muss also beide Limits bestehen.
+
 ## Aufräumen
 
 ```bash
