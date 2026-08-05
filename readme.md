@@ -15,6 +15,9 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
   Source Namespace: Clients aus zwei unterschiedlichen Namespaces (`extern`/`intern`)
   rufen denselben Service auf, werden per `VirtualService`/`DestinationRule` aber auf
   unterschiedliche Backend-Pods geroutet.
+- [`faultInjection/`](faultInjection/readme.md) — Istio HTTP Fault Injection: ein
+  `VirtualService` injiziert per `x-fault`-Header gezielt Delay (5s) oder Abort
+  (HTTP 500) in Requests an ein `nginx`-Deployment, ohne den Service selbst zu ändern.
 
 ## Voraussetzungen
 
