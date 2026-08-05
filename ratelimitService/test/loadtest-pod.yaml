@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: loadtest
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  restartPolicy: Never
+  containers:
+    - name: loadtest
+      image: curlimages/curl:8.11.0
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      command:
+        - sh
+        - -c
+        - |
+          i=1
+          while [ "$i" -le "${REQUESTS}" ]; do
+            echo "=== request $i ==="
+            curl -s -D - -o /dev/null "${TARGET}"
+            i=$((i+1))
+            sleep 0.2
+          done
