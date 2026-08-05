@@ -5,23 +5,6 @@ eigenen Namespace, abgesichert durch einen `EnvoyFilter`, der pro Sidecar nur ei
 begrenzte Anzahl Requests pro Zeitfenster zulässt. Ein Lasttest-Pod zeigt anschließend
 die resultierenden HTTP-Returncodes (200 vs. 429).
 
-## Verzeichnisstruktur
-
-```
-ratelimits/
-  install.sh                 # installiert alle Manifeste
-  uninstall.sh                # entfernt die Ressourcen dieses Usecases wieder
-  run.sh                      # startet den Lasttest
-  manifests/
-    00-namespace.yaml                    # Namespace (Default: ratelimit-demo, istio-injection: enabled)
-    05-nginx-configmap.yaml              # ConfigMap mit nginx.conf (Server lauscht auf Port 8080)
-    10-nginx-deployment.yaml             # Deployment nginx, replicas: 2, containerPort 8080
-    11-nginx-service.yaml                # ClusterIP Service nginx (port 80 -> targetPort 8080)
-    20-envoyfilter-local-ratelimit.yaml  # Envoy Local Rate Limit auf den nginx-Sidecars
-  test/
-    loadtest-pod.yaml          # Pod-Template für den Lasttest-Container (curl-Schleife)
-```
-
 ## Voraussetzungen
 
 - laufender Kubernetes-Cluster mit installiertem Istio (Sidecar-Injection verfügbar)

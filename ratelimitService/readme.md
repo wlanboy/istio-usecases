@@ -17,27 +17,6 @@ Client -> nginx-Sidecar --(gRPC ShouldRateLimit)--> ratelimit-Service -> Redis
                         --(falls erlaubt)--> nginx-Container
 ```
 
-## Verzeichnisstruktur
-
-```
-ratelimitService/
-  install.sh                                    # installiert alle Manifeste
-  uninstall.sh                                   # entfernt die Ressourcen dieses Usecases wieder
-  run.sh                                         # startet den Lasttest
-  manifests/
-    00-namespace.yaml                            # Namespace (Default: ratelimit-service-demo, istio-injection: enabled)
-    01-redis.yaml                                 # Redis Deployment/Service, Backend für den Ratelimit-Service
-    02-ratelimit-config.yaml                      # ConfigMap: Domain + Descriptor + Limit (5 Requests/Minute)
-    03-ratelimit-service.yaml                     # envoyproxy/ratelimit Deployment/Service (gRPC Port 8081)
-    05-nginx-configmap.yaml                       # nginx.conf, Server lauscht auf Port 8080
-    10-nginx-deployment.yaml                      # Deployment nginx, replicas: 2, containerPort 8080
-    11-nginx-service.yaml                         # ClusterIP Service nginx (port 80 -> targetPort 8080)
-    20-envoyfilter-ratelimit-filter.yaml           # fügt den envoy.filters.http.ratelimit HTTP-Filter ein
-    21-envoyfilter-ratelimit-route.yaml            # aktiviert das Limit auf der Inbound-Route via rate_limits-Action
-  test/
-    loadtest-pod.yaml                              # Pod-Template für den Lasttest-Container (curl-Schleife)
-```
-
 ## Voraussetzungen
 
 - laufender Kubernetes-Cluster mit installiertem Istio (Sidecar-Injection verfügbar)
