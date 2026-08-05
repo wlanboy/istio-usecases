@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: ${NAMESPACE}
+  labels:
+    app: backend
+spec:
+  # Selector matcht BEIDE Versionen (extern + intern) - die eigentliche
+  # Aufteilung auf die passende Version übernehmen VirtualService + DestinationRule
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
