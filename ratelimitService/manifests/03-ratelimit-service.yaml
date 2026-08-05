@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimit
+  namespace: ${NAMESPACE}
+  labels:
+    app: ratelimit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratelimit
+  template:
+    metadata:
+      labels:
+        app: ratelimit
+    spec:
+      containers:
+        - name: ratelimit
+          image: envoyproxy/ratelimit:6f5de117
+          # command muss explizit gesetzt werden: das Image hat kein ENTRYPOINT
+          # und CMD ["/bin/sh"] als Default -> ohne Override startet eine Shell
+          # ohne TTY, die sofort mit Exit-Code 0 beendet wird (kein Server läuft)
+          command: ["/bin/ratelimit"]
+          env:
+            - name: USE_STATSD
+              value: "false"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: REDIS_SOCKET_TYPE
+              value: "tcp"
+            - name: REDIS_URL
+              value: "redis:6379"
+            - name: RUNTIME_ROOT
+              value: "/data"
+            - name: RUNTIME_SUBDIRECTORY
+              value: "ratelimit"
+            - name: RUNTIME_IGNOREDOTFILES
+              value: "true"
+            - name: RUNTIME_WATCH_ROOT
+              value: "false"
+          ports:
+            - name: http-debug
+              containerPort: 8080
+            - name: grpc
+              containerPort: 8081
+            - name: admin
+              containerPort: 6070
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: ratelimit-config
+              mountPath: /data/ratelimit/config
+      volumes:
+        - name: ratelimit-config
+          configMap:
+            name: ratelimit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimit
+  namespace: ${NAMESPACE}
+  labels:
+    app: ratelimit
+spec:
+  selector:
+    app: ratelimit
+  ports:
+    - name: http-debug
+      port: 8080
+      targetPort: 8080
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+    - name: admin
+      port: 6070
+      targetPort: 6070
