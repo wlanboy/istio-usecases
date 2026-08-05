@@ -11,6 +11,10 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
 - [`ratelimitService/`](ratelimitService/readme.md) — Istio Global Rate Limiting: ein über
   alle nginx-Replicas gemeinsam geltendes Limit, durchgesetzt via externem
   Envoy-RateLimit-Service (Redis-Backend) statt per-Sidecar-Token-Bucket.
+- [`namespaceRouting/`](namespaceRouting/readme.md) — Istio Traffic Routing anhand des
+  Source Namespace: Clients aus zwei unterschiedlichen Namespaces (`extern`/`intern`)
+  rufen denselben Service auf, werden per `VirtualService`/`DestinationRule` aber auf
+  unterschiedliche Backend-Pods geroutet.
 
 ## Voraussetzungen
 
