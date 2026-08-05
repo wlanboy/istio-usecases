@@ -27,7 +27,7 @@ ratelimitService/
   manifests/
     00-namespace.yaml                            # Namespace (Default: ratelimit-service-demo, istio-injection: enabled)
     01-redis.yaml                                 # Redis Deployment/Service, Backend für den Ratelimit-Service
-    02-ratelimit-config.yaml                      # ConfigMap: Domain + Descriptor + Limit (10 Requests/Minute)
+    02-ratelimit-config.yaml                      # ConfigMap: Domain + Descriptor + Limit (5 Requests/Minute)
     03-ratelimit-service.yaml                     # envoyproxy/ratelimit Deployment/Service (gRPC Port 8081)
     05-nginx-configmap.yaml                       # nginx.conf, Server lauscht auf Port 8080
     10-nginx-deployment.yaml                      # Deployment nginx, replicas: 2, containerPort 8080
@@ -86,8 +86,8 @@ aktiviert haben), sonst greift kein Sidecar und damit auch kein Rate Limit.
 ./run.sh mein-namespace 50       # eigener Namespace, eigene Anzahl Requests
 ```
 
-Da das Limit (10 Requests/Minute) **global** über beide nginx-Replicas gilt,
-sollte man ab dem 11. Request innerhalb einer Minute `429`-Antworten sehen —
+Da das Limit (5 Requests/Minute) **global** über beide nginx-Replicas gilt,
+sollte man ab dem 6. Request innerhalb einer Minute `429`-Antworten sehen —
 unabhängig davon, welches der beiden Replicas den jeweiligen Request bedient hat.
 
 Führt intern aus (Platzhalter aus `test/loadtest-pod.yaml` werden per `sed` ersetzt):
@@ -128,11 +128,34 @@ und die Werte `cluster_name` (in `20-envoyfilter-ratelimit-filter.yaml`) bzw.
 `vhost.name`/`route.name` (in `21-envoyfilter-ratelimit-route.yaml`) entsprechend
 anpassen.
 
+**Wichtig:** `vhost.name` folgt dem Muster `inbound|http|<servicePort>` — hier
+zählt der **Service-Port** aus `11-nginx-service.yaml` (`80`), **nicht** der
+`containerPort` (`8080`) aus `10-nginx-deployment.yaml`!
+
 Logs des Ratelimit-Service (zeigt eingehende `ShouldRateLimit`-Aufrufe):
 
 ```bash
 kubectl -n <namespace> logs deployment/ratelimit
 ```
+
+Falls der `ratelimit`-Pod dauerhaft `1/2 Ready` bleibt bzw. im
+`CrashLoopBackOff` hängt und der `ratelimit`-Container mit Exit-Code `0` sofort
+wieder beendet wird: Das Image `envoyproxy/ratelimit:6f5de117` hat kein
+`ENTRYPOINT` und als `CMD` nur `/bin/sh` — ohne den `command: ["/bin/ratelimit"]`
+in `03-ratelimit-service.yaml` startet also nur eine Shell ohne TTY, die sofort
+terminiert (kein Server läuft, keine Logs, keine `ShouldRateLimit`-Aufrufe).
+
+Falls stattdessen bei jedem Request `500` statt `200`/`429` zurückkommt und im
+Ratelimit-Service ebenfalls keine `ShouldRateLimit`-Logs auftauchen: Der Filter
+matcht zwar (`failure_mode_deny: true` schlägt zu), aber der gRPC-Call selbst
+scheitert. Debuggen mit Envoy-Debug-Logging auf dem nginx-Sidecar
+(`istioctl proxy-config log <nginx-pod> -n <namespace> --level debug`) und
+Prüfung auf `http2.invalid.header.field` / `grpc-status 14` im Log des
+`ratelimit`-Sidecars. Ursache war hier: Ohne explizites `authority`-Feld im
+`envoy_grpc`-Block von `20-envoyfilter-ratelimit-filter.yaml` verwendet Envoy
+den `cluster_name` selbst (z.B. `outbound|8081||ratelimit....`) als
+`:authority`-Header — die enthaltenen `|`-Zeichen sind als HTTP/2-Header
+ungültig, der Ziel-Sidecar resettet den Stream.
 
 ## Kombinierter Einsatz mit `ratelimits/`
 
