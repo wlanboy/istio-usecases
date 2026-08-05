@@ -5,6 +5,13 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app: tls-origination-test-client
+  annotations:
+    # Injiziert die ConfigMap "github-ca-bundle" NUR in den vom Sidecar-Injector
+    # erzeugten istio-proxy-Container (nicht in "client" unten) - der Envoy-
+    # Sidecar ist es, der die TLS-Verbindung aufbaut und das CA-Bundle braucht,
+    # siehe caCertificates in manifests/20-destinationrule-api-github-com.yaml.
+    sidecar.istio.io/userVolume: '[{"name":"github-ca-bundle","configMap":{"name":"github-ca-bundle"}}]'
+    sidecar.istio.io/userVolumeMount: '[{"name":"github-ca-bundle","mountPath":"/etc/istio-egress-certs"}]'
 spec:
   restartPolicy: Never
   containers:

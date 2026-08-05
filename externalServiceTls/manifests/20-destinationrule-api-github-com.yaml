@@ -7,11 +7,18 @@ spec:
   host: api.github.com
   trafficPolicy:
     # Fuer Verbindungen zu Port 443 baut der Envoy-Sidecar selbst eine
-    # TLS-Verbindung zum echten api.github.com auf (Server-Auth via
-    # System-CA-Bundle des Sidecars). Der App-Container muss dafuer selbst
-    # kein TLS sprechen.
+    # TLS-Verbindung zum echten api.github.com auf. Der App-Container muss
+    # dafuer selbst kein TLS sprechen.
     portLevelSettings:
       - port:
           number: 443
         tls:
           mode: SIMPLE
+          # Explizites CA-Pinning statt Verlass auf das System-CA-Bundle des
+          # Sidecars: In einem Offline-/Air-Gap-Cluster ist nicht garantiert,
+          # dass das istio-proxy-Image ein aktuelles/vollstaendiges
+          # oeffentliches CA-Bundle enthaelt. Der Pfad wird per
+          # Sidecar-Annotation (siehe test/client-pod.yaml) NUR in den
+          # istio-proxy-Container gemountet - aus der ConfigMap
+          # "github-ca-bundle" (manifests/05-configmap-github-ca.yaml).
+          caCertificates: /etc/istio-egress-certs/github-ca-bundle.pem
