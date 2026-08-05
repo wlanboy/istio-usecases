@@ -1,0 +1,31 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: backend
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - backend.${NAMESPACE}.svc.cluster.local
+  http:
+    # 1. Regel: Requests, deren Client-Pod im Namespace "${EXTERN_NS}" läuft,
+    # werden auf das "extern"-Subset geroutet
+    - match:
+        - sourceNamespace: ${EXTERN_NS}
+      route:
+        - destination:
+            host: backend.${NAMESPACE}.svc.cluster.local
+            subset: extern
+    # 2. Regel: Requests, deren Client-Pod im Namespace "${INTERN_NS}" läuft,
+    # werden auf das "intern"-Subset geroutet
+    - match:
+        - sourceNamespace: ${INTERN_NS}
+      route:
+        - destination:
+            host: backend.${NAMESPACE}.svc.cluster.local
+            subset: intern
+    # Fallback für alle anderen Source-Namespaces (z.B. beim Testen aus einem
+    # dritten Namespace) - ohne diese Regel würde Istio ansonsten 404 liefern
+    - route:
+        - destination:
+            host: backend.${NAMESPACE}.svc.cluster.local
+            subset: extern
