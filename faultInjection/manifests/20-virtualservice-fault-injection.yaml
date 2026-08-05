@@ -1,0 +1,45 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: nginx
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - nginx.${NAMESPACE}.svc.cluster.local
+  http:
+    # 1. Regel: Requests mit Header "x-fault: delay" bekommen einen fixen
+    # Delay von 5s injiziert, bevor sie an nginx weitergeleitet werden.
+    # percentage.value: 100 -> der Delay wird bei jedem Match durchgesetzt
+    # (kein zufälliges Sampling, damit das Verhalten beim Testen deterministisch ist)
+    - match:
+        - headers:
+            x-fault:
+              exact: delay
+      fault:
+        delay:
+          percentage:
+            value: 100
+          fixedDelay: 5s
+      route:
+        - destination:
+            host: nginx.${NAMESPACE}.svc.cluster.local
+    # 2. Regel: Requests mit Header "x-fault: abort" bekommen statt einer
+    # echten Antwort von nginx direkt einen HTTP 500 zurückgegeben
+    # (die Anfrage erreicht nginx in diesem Fall gar nicht erst).
+    - match:
+        - headers:
+            x-fault:
+              exact: abort
+      fault:
+        abort:
+          percentage:
+            value: 100
+          httpStatus: 500
+      route:
+        - destination:
+            host: nginx.${NAMESPACE}.svc.cluster.local
+    # Fallback: Requests ohne (oder mit anderem) "x-fault"-Header werden
+    # unverändert, ohne injizierten Fehler an nginx weitergeleitet.
+    - route:
+        - destination:
+            host: nginx.${NAMESPACE}.svc.cluster.local
