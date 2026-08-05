@@ -1,0 +1,21 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-github-com-tls-origination
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - api.github.com
+  http:
+    # Requests, die der App-Container im Klartext an Port 80 schickt, werden
+    # am ausgehenden Sidecar auf Port 443 umgeschrieben. In Kombination mit der
+    # DestinationRule oben (TLS-Mode SIMPLE fuer Port 443) fuehrt das dazu,
+    # dass der Sidecar die eigentliche Verbindung per TLS aufbaut - die App
+    # bekommt davon nichts mit.
+    - match:
+        - port: 80
+      route:
+        - destination:
+            host: api.github.com
+            port:
+              number: 443

@@ -1,0 +1,17 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: api-github-com-tls-origination
+  namespace: ${NAMESPACE}
+spec:
+  host: api.github.com
+  trafficPolicy:
+    # Fuer Verbindungen zu Port 443 baut der Envoy-Sidecar selbst eine
+    # TLS-Verbindung zum echten api.github.com auf (Server-Auth via
+    # System-CA-Bundle des Sidecars). Der App-Container muss dafuer selbst
+    # kein TLS sprechen.
+    portLevelSettings:
+      - port:
+          number: 443
+        tls:
+          mode: SIMPLE

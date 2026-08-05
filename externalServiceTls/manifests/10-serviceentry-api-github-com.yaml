@@ -1,0 +1,20 @@
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: api-github-com
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - api.github.com
+  # Beide Ports werden im Service-Registry-Eintrag benoetigt: Port 80, damit die
+  # App im Klartext dagegen reden kann, Port 443 als tatsaechliches TLS-Ziel, auf
+  # das die VirtualService-Regel unten umleitet.
+  ports:
+    - number: 80
+      name: http-port
+      protocol: HTTP
+    - number: 443
+      name: https-port
+      protocol: TLS
+  resolution: DNS
+  location: MESH_EXTERNAL

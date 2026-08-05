@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: tls-origination-test-client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: curlimages/curl:8.11.0
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== Klartext-HTTP-Request an ${TARGET} (Port 80, App-Container spricht kein TLS) ==="
+          RESPONSE=$(curl -s -w '\n%{http_code}' "${TARGET}")
+          STATUS=$(echo "${RESPONSE}" | tail -n1)
+          BODY=$(echo "${RESPONSE}" | sed '$d')
+          echo "HTTP-Status: ${STATUS}"
+          echo "--- Erste Zeile des Response-Bodys ---"
+          echo "${BODY}" | head -n1
+          echo
+          # Ohne die TLS-Origination dieses Usecases wuerde api.github.com auf
+          # Klartext-Port 80 nur mit HTTP 301 (Redirect auf https://) antworten.
+          # Status 200 mit echtem JSON-Body (Feld "current_user_url") beweist,
+          # dass der Envoy-Sidecar die Verbindung tatsaechlich per TLS auf
+          # Port 443 zu api.github.com aufgebaut hat.
+          if echo "${BODY}" | grep -q "current_user_url"; then
+            echo "==> TLS-Origination hat gegriffen: echte API-Antwort statt 301-Redirect erhalten."
+          else
+            echo "==> TLS-Origination hat NICHT gegriffen: vermutlich nur der 301-Redirect von GitHub erhalten."
+          fi

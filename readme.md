@@ -18,6 +18,11 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
 - [`faultInjection/`](faultInjection/readme.md) — Istio HTTP Fault Injection: ein
   `VirtualService` injiziert per `x-fault`-Header gezielt Delay (5s) oder Abort
   (HTTP 500) in Requests an ein `nginx`-Deployment, ohne den Service selbst zu ändern.
+- [`externalServiceTls/`](externalServiceTls/readme.md) — Istio TLS Origination für
+  Egress-Traffic: `ServiceEntry`, `DestinationRule` (`tls.mode: SIMPLE`) und
+  `VirtualService` sorgen dafür, dass der Envoy-Sidecar die TLS-Verbindung zu einem
+  externen Dienst (`api.github.com`) selbst aufbaut, während der App-Container nur
+  Klartext-HTTP spricht.
 
 ## Voraussetzungen
 
