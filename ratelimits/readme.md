@@ -10,6 +10,7 @@ die resultierenden HTTP-Returncodes (200 vs. 429).
 ```
 ratelimits/
   install.sh                 # installiert alle Manifeste
+  uninstall.sh                # entfernt die Ressourcen dieses Usecases wieder
   run.sh                      # startet den Lasttest
   manifests/
     00-namespace.yaml                    # Namespace (Default: ratelimit-demo, istio-injection: enabled)
@@ -130,6 +131,16 @@ der lokale Token-Bucket pro Sidecar **und** das globale, Redis-gestützte Limit.
 Ein Request muss also beide Limits bestehen.
 
 ## Aufräumen
+
+```bash
+./uninstall.sh                   # Standard-Namespace: ratelimit-demo
+./uninstall.sh mein-namespace    # eigenen Namespace verwenden
+```
+
+Entfernt nur die von diesem Usecase angelegten Ressourcen (EnvoyFilter,
+Deployment, Service, ConfigMap) — der Namespace selbst bleibt bestehen, da er
+z.B. gemeinsam mit `ratelimitService/` genutzt werden könnte. Soll auch der
+Namespace komplett verschwinden:
 
 ```bash
 kubectl delete namespace <namespace>   # z.B. ratelimit-demo
