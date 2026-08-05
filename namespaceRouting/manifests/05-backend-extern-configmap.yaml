@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-extern-html
+  namespace: ${NAMESPACE}
+  labels:
+    app: backend
+    version: extern
+data:
+  index.html: |
+    Antwort vom EXTERN-Pod (version=extern)

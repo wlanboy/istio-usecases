@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-extern
+  namespace: ${NAMESPACE}
+  labels:
+    app: backend
+    version: extern
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+      version: extern
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: extern
+    spec:
+      containers:
+        - name: nginx
+          # unprivileged Image: lauscht bereits ohne weitere Konfiguration auf Port 8080
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+      volumes:
+        - name: html
+          configMap:
+            name: backend-extern-html

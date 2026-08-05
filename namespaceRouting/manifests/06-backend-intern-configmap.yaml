@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-intern-html
+  namespace: ${NAMESPACE}
+  labels:
+    app: backend
+    version: intern
+data:
+  index.html: |
+    Antwort vom INTERN-Pod (version=intern)
