@@ -1,0 +1,37 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: nginx-global-ratelimit-route
+  namespace: ${NAMESPACE}
+spec:
+  workloadSelector:
+    labels:
+      app: nginx
+  configPatches:
+    - applyTo: HTTP_ROUTE
+      match:
+        context: SIDECAR_INBOUND
+        routeConfiguration:
+          # Name des von Istio generierten Inbound-VirtualHost:
+          # Muster "inbound|<protokoll>|<servicePort>" -- ACHTUNG: hier zählt
+          # der Service-Port (11-nginx-service.yaml: port 80), NICHT der
+          # containerPort (8080)! Falls hier nichts matcht (Rate Limit greift
+          # nicht), mit
+          # `istioctl proxy-config route <nginx-pod> -n ${NAMESPACE} -o json`
+          # den tatsächlichen vhost-/route-Namen prüfen und anpassen.
+          vhost:
+            name: "inbound|http|80"
+            route:
+              name: "default"
+      patch:
+        # MERGE fügt "rate_limits" der bestehenden RouteAction hinzu, ohne den
+        # Rest der (von Istio generierten) Route zu überschreiben
+        operation: MERGE
+        value:
+          route:
+            rate_limits:
+              - actions:
+                  # generic_key: fester Descriptor, unabhängig vom Request
+                  # -> alle Requests zählen gemeinsam gegen dasselbe, globale Limit
+                  - generic_key:
+                      descriptor_value: "nginx-ratelimit"
