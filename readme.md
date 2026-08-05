@@ -20,3 +20,5 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
 
 - laufender Kubernetes-Cluster mit installiertem Istio
 - `kubectl` mit gültigem Kontext auf diesen Cluster
+  - Falls stattdessen nur `~/oc` (OpenShift-CLI) verfügbar ist:
+    `source alias.sh` setzt `kubectl` als Alias auf `~/oc`
