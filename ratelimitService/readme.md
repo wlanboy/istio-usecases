@@ -24,7 +24,7 @@ ratelimitService/
   install.sh                                    # installiert alle Manifeste
   run.sh                                         # startet den Lasttest
   manifests/
-    00-namespace.yaml                            # Namespace (Default: ratelimit-full-demo, istio-injection: enabled)
+    00-namespace.yaml                            # Namespace (Default: ratelimit-service-demo, istio-injection: enabled)
     01-redis.yaml                                 # Redis Deployment/Service, Backend für den Ratelimit-Service
     02-ratelimit-config.yaml                      # ConfigMap: Domain + Descriptor + Limit (10 Requests/Minute)
     03-ratelimit-service.yaml                     # envoyproxy/ratelimit Deployment/Service (gRPC Port 8081)
@@ -45,7 +45,7 @@ ratelimitService/
 ## Installation
 
 ```bash
-./install.sh                          # Standard-Namespace: ratelimit-full-demo
+./install.sh                          # Standard-Namespace: ratelimit-service-demo
 ./install.sh mein-namespace           # eigenen Namespace verwenden
 ```
 
@@ -80,7 +80,7 @@ aktiviert haben), sonst greift kein Sidecar und damit auch kein Rate Limit.
 ## Lasttest ausführen
 
 ```bash
-./run.sh                         # Standard: Namespace ratelimit-full-demo, 30 Requests
+./run.sh                         # Standard: Namespace ratelimit-service-demo, 30 Requests
 ./run.sh mein-namespace          # eigener Namespace, 30 Requests
 ./run.sh mein-namespace 50       # eigener Namespace, eigene Anzahl Requests
 ```
@@ -133,8 +133,26 @@ Logs des Ratelimit-Service (zeigt eingehende `ShouldRateLimit`-Aufrufe):
 kubectl -n <namespace> logs deployment/ratelimit
 ```
 
+## Kombinierter Einsatz mit `ratelimits/`
+
+Dieser Usecase lässt sich gefahrlos zusammen mit
+[`ratelimits/`](../ratelimits/readme.md) **im selben Namespace** installieren:
+`nginx`-ConfigMap, -Deployment und -Service sind in beiden Verzeichnissen
+byte-identisch (das zweite `apply` ist also ein No-Op), und alle übrigen
+Ressourcennamen (EnvoyFilter, Redis, Ratelimit-Service) sind eindeutig und
+kollidieren nicht.
+
+```bash
+./ratelimits/install.sh demo
+./ratelimitService/install.sh demo
+```
+
+Ergebnis: Auf den `nginx`-Pods greifen dann **beide** Mechanismen gleichzeitig —
+der lokale Token-Bucket pro Sidecar **und** das globale, Redis-gestützte Limit.
+Ein Request muss also beide Limits bestehen.
+
 ## Aufräumen
 
 ```bash
-kubectl delete namespace <namespace>   # z.B. ratelimit-full-demo
+kubectl delete namespace <namespace>   # z.B. ratelimit-service-demo
 ```
