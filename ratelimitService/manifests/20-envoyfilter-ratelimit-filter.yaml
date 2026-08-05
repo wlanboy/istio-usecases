@@ -1,0 +1,53 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: nginx-global-ratelimit-filter
+  namespace: ${NAMESPACE}
+spec:
+  # workloadSelector: Filter wird auf die Envoy-Sidecars der nginx-Pods angewendet
+  workloadSelector:
+    labels:
+      app: nginx
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        # context: SIDECAR_INBOUND -> greift auf eingehendem Traffic des nginx-Sidecars
+        context: SIDECAR_INBOUND
+        listener:
+          filterChain:
+            filter:
+              name: "envoy.filters.network.http_connection_manager"
+              subFilter:
+                # der Ratelimit-Filter muss VOR dem Router-Filter in der HTTP-Filterkette
+                # sitzen, damit er noch vor dem eigentlichen Routing greifen kann
+                name: "envoy.filters.http.router"
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.ratelimit
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            # domain: muss mit "domain" in der ratelimit-config.yaml (ConfigMap
+            # 02-ratelimit-config.yaml) übereinstimmen
+            domain: nginx-ratelimit
+            # failure_mode_deny: true -> wenn der Ratelimit-Service nicht erreichbar
+            # ist, werden Requests abgelehnt (fail-closed) statt durchgelassen
+            failure_mode_deny: true
+            timeout: 10s
+            rate_limit_service:
+              transport_api_version: V3
+              grpc_service:
+                envoy_grpc:
+                  # cluster_name: von Istio automatisch generierter Outbound-Cluster
+                  # für den ratelimit-Service (Muster: outbound|<port>||<fqdn>).
+                  # Falls der Aufruf fehlschlägt, mit
+                  # `istioctl proxy-config cluster <nginx-pod> -n ${NAMESPACE}`
+                  # den tatsächlichen Cluster-Namen prüfen.
+                  cluster_name: "outbound|8081||ratelimit.${NAMESPACE}.svc.cluster.local"
+                  # authority: MUSS explizit gesetzt werden. Ohne dieses Feld
+                  # verwendet Envoy den cluster_name selbst als :authority-Header
+                  # (siehe EnvoyGrpc-Doku) -- der enthält "|" und ist damit ein
+                  # ungültiger HTTP/2-Header ("http2.invalid.header.field"), was
+                  # den gRPC-Call fehlschlagen lässt (failure_mode_deny -> 500).
+                  authority: "ratelimit.${NAMESPACE}.svc.cluster.local"
+                timeout: 10s
