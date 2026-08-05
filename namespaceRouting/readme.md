@@ -115,11 +115,11 @@ Antwort vom INTERN-Pod (version=intern)
 
 Der Test-Client-Pod läuft **mit** Istio-Sidecar (im Gegensatz zu den
 Lasttest-Pods in `ratelimits/`/`ratelimitService/`), da die Routing-Regel am
-Client-seitigen Envoy ausgewertet wird. Da der Pod dadurch nach Ende von
-`curl` sonst nicht terminieren würde (der `istio-proxy`-Container läuft
-weiter), ruft der Client-Container anschließend
-`http://localhost:15020/quitquitquit` auf, um den Sidecar aktiv zu beenden —
-erst danach erreicht der Pod die Phase `Succeeded`.
+Client-seitigen Envoy ausgewertet wird. Als natives Sidecar (Istio 1.27+,
+K8s 1.29+, Standard seit Istio 1.27) beendet Kubelet den `istio-proxy`
+automatisch, sobald der `client`-Container terminiert — der Pod erreicht
+die Phase `Succeeded`, ohne dass der Sidecar manuell (z.B. via
+`quitquitquit`) beendet werden muss.
 
 ## Troubleshooting
 

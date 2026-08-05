@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: routing-test-client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: curlimages/curl:8.11.0
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== Request aus Namespace ${NAMESPACE} an ${TARGET} ==="
+          curl -s "${TARGET}"
+          echo
+          # Ohne Sidecar würde die VirtualService-Routing-Regel (sourceNamespace)
+          # nicht greifen, da diese am AUSGEHENDEN Envoy des Clients ausgewertet
+          # wird. Der Sidecar hier laeuft daher bewusst mit (kein
+          # sidecar.istio.io/inject: "false"). Als natives Sidecar (Istio 1.27+,
+          # K8s 1.29+) beendet Kubelet den istio-proxy automatisch, sobald dieser
+          # Container terminiert - der Pod erreicht "Succeeded" ohne weiteres Zutun.
