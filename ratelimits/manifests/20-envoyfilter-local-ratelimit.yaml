@@ -1,0 +1,68 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: nginx-local-ratelimit
+  namespace: ${NAMESPACE}
+spec:
+  # workloadSelector: legt fest, auf welche Pods dieser EnvoyFilter angewendet wird
+  # (hier alle Pods mit Label app=nginx, also deren Envoy-Sidecars)
+  workloadSelector:
+    labels:
+      app: nginx
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        # context: SIDECAR_INBOUND -> das Rate Limiting greift auf dem eingehenden
+        # Traffic des Sidecars (bevor die Anfrage die Anwendung/nginx erreicht)
+        context: SIDECAR_INBOUND
+        listener:
+          filterChain:
+            filter:
+              # der Patch wird vor dem HTTP Connection Manager Filter eingefügt,
+              # damit der Local-Ratelimit-Filter in der HTTP-Filterkette landet
+              name: "envoy.filters.network.http_connection_manager"
+      patch:
+        # INSERT_BEFORE: der neue Filter wird vor dem gematchten Filter eingefügt
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+            type_url: type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            value:
+              # stat_prefix: Präfix für die von diesem Filter erzeugten Envoy-Statistiken
+              # (z.B. abrufbar über /stats des Envoy-Sidecars)
+              stat_prefix: http_local_rate_limiter
+              # token_bucket: definiert den eigentlichen Rate-Limit-Algorithmus (Token Bucket)
+              token_bucket:
+                # max_tokens: maximale Anzahl an Tokens im Bucket (= Burst-Größe,
+                # so viele Requests dürfen kurzfristig auf einmal durchgelassen werden)
+                max_tokens: 5
+                # tokens_per_fill: Anzahl an Tokens, die pro fill_interval nachgefüllt werden
+                tokens_per_fill: 5
+                # fill_interval: Zeitintervall, nach dem die Tokens wieder aufgefüllt werden
+                # -> hier: alle 30s werden 5 neue Tokens vergeben = max. 5 Requests/30s
+                fill_interval: 30s
+              # filter_enabled: Prozentsatz der Requests, für die der Filter überhaupt aktiv ist
+              # (100/100 = für 100% der Requests aktiv, dient z.B. für schrittweises Rollout)
+              filter_enabled:
+                runtime_key: local_rate_limit_enabled
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
+              # filter_enforced: Prozentsatz der Requests, bei denen das Limit tatsächlich
+              # durchgesetzt wird (429 zurückgegeben), falls überschritten
+              # (100/100 = Limit wird immer durchgesetzt; kleinere Werte = "Shadow Mode"
+              # zum Testen, ohne echte Requests zu blockieren)
+              filter_enforced:
+                runtime_key: local_rate_limit_enforced
+                default_value:
+                  numerator: 100
+                  denominator: HUNDRED
+              # response_headers_to_add: zusätzlicher Response-Header, der bei aktivem
+              # Rate Limiting gesetzt wird (append: false = überschreibt vorhandenen Header)
+              response_headers_to_add:
+                - append: false
+                  header:
+                    key: x-local-rate-limit
+                    value: "true"
