@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: mirror-test-client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: curlimages/curl:8.11.0
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== Request an ${TARGET} (mit Authorization-Header und JSON-Body) ==="
+          curl -s -o /dev/null -w 'HTTP-Status: %{http_code}, Dauer: %{time_total}s\n' \
+            -H "Authorization: Bearer s3cr3t-oauth-token-abcdef123456" \
+            -H "X-Demo-Header: mirror-test" \
+            -H "Content-Type: application/json" \
+            -X POST -d '{"hello":"world"}' \
+            "${TARGET}"
+          # Ohne Sidecar wuerde die VirtualService-Mirror-Regel nicht greifen, da sie
+          # am AUSGEHENDEN Envoy des Clients ausgewertet wird (analog zu
+          # faultInjection/ und namespaceRouting/). Der Sidecar laeuft hier daher
+          # bewusst mit (kein sidecar.istio.io/inject: "false"). Als natives
+          # Sidecar (Istio 1.27+, K8s 1.29+) beendet Kubelet den istio-proxy
+          # automatisch, sobald dieser Container terminiert.

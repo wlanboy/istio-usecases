@@ -1,0 +1,23 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: nginx
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - nginx.${NAMESPACE}.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: nginx.${NAMESPACE}.svc.cluster.local
+      # mirror: schickt zusaetzlich zur normalen Route eine 1:1-Kopie jedes
+      # Requests (fire-and-forget) an den logger-Service. Die Antwort des
+      # Mirrors wird verworfen und hat KEINEN Einfluss auf die Antwort, die
+      # der Client tatsaechlich sieht (weder auf Response-Body/-Status noch
+      # nennenswert auf die Latenz).
+      mirror:
+        host: logger.${NAMESPACE}.svc.cluster.local
+      # mirrorPercentage: Anteil der Requests, die gespiegelt werden.
+      # 100 -> jeder Request wird gespiegelt (deterministisch fuers Demo).
+      mirrorPercentage:
+        value: 100.0

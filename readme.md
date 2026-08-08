@@ -23,6 +23,11 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
   `VirtualService` sorgen dafür, dass der Envoy-Sidecar die TLS-Verbindung zu einem
   externen Dienst (`api.github.com`) selbst aufbaut, während der App-Container nur
   Klartext-HTTP spricht.
+- [`mirrorLogging/`](mirrorLogging/readme.md) — Istio Traffic Mirroring: ein
+  `VirtualService` spiegelt jeden Request an `nginx` zusätzlich (fire-and-forget)
+  an einen `logger`-Pod, der Methode, Header und Body protokolliert und dabei den
+  `Authorization`-Wert (OAuth-Token) durch `*` ersetzt — der Client bekommt nur die
+  Antwort von `nginx` zu sehen.
 
 ## Voraussetzungen
 

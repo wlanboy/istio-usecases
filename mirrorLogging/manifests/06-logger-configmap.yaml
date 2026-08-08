@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logger-script
+  namespace: ${NAMESPACE}
+  labels:
+    app: logger
+data:
+  logger.py: |
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    # Header, deren Werte im Log durch "*" ersetzt werden - insbesondere
+    # Authorization (OAuth-Bearer-Token), aber vorsorglich auch andere
+    # gaengige Token-Header.
+    REDACT_HEADERS = {"authorization", "proxy-authorization", "x-auth-token", "x-access-token"}
+
+    def redact(name, value):
+        if name.lower() not in REDACT_HEADERS:
+            return value
+        scheme, _, token = value.partition(" ")
+        if token:
+            return f"{scheme} {'*' * len(token)}"
+        return "*" * len(value)
+
+    class LoggingHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def _handle(self):
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(length) if length else b""
+
+            print(f"=== Mirrored Request: {self.command} {self.path} ===", flush=True)
+            for name, value in self.headers.items():
+                print(f"{name}: {redact(name, value)}", flush=True)
+            if body:
+                print(f"--- Body ({len(body)} bytes) ---", flush=True)
+                print(body.decode(errors="replace"), flush=True)
+            print("=== Ende ===", flush=True)
+
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _handle
+
+        def log_message(self, format, *args):
+            pass  # eigenes Logging oben, Standard-Access-Log unterdruecken
+
+    if __name__ == "__main__":
+        port = 8080
+        print(f"logger lauscht auf Port {port}", flush=True)
+        ThreadingHTTPServer(("0.0.0.0", port), LoggingHandler).serve_forever()
