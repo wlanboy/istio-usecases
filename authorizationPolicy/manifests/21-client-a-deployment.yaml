@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-a
+  namespace: ${NAMESPACE}
+  labels:
+    app: client-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: client-a
+  template:
+    metadata:
+      labels:
+        app: client-a
+    spec:
+      serviceAccountName: client-a
+      containers:
+        - name: client
+          image: curlimages/curl:8.11.0
+          command: ["sleep", "infinity"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

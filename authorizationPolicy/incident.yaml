@@ -1,0 +1,27 @@
+# Simuliert einen Sicherheitsvorfall: "client-b" gilt als kompromittiert und
+# wird gezielt vom Zugriff auf "backend" ausgeschlossen - anhand seiner
+# Workload-Identity (Namespace + ServiceAccount, kodiert im mTLS-Client-
+# Zertifikat als SPIFFE-Principal), nicht anhand von IP oder Netzwerksegment.
+# "client-a" ist von der Regel nicht betroffen und bleibt weiterhin zugelassen.
+#
+# Anwenden (Vorfall auslösen): kubectl apply -f incident.yaml
+# Aufheben (Vorfall beendet):  kubectl delete -f incident.yaml
+#
+# Hinweis: Bei abweichendem Namespace (install.sh <namespace>) vorher
+# "authz-policy-demo" unten durch <namespace> ersetzen, z.B.:
+#   sed 's/authz-policy-demo/<namespace>/g' incident.yaml | kubectl apply -f -
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: block-client-b-incident
+  namespace: authz-policy-demo
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces: ["authz-policy-demo"]
+            principals: ["cluster.local/ns/authz-policy-demo/sa/client-b"]

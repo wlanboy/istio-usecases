@@ -28,6 +28,12 @@ Manifesten, Install-/Test-Skripten und eigener `readme.md`.
   an einen `logger`-Pod, der Methode, Header und Body protokolliert und dabei den
   `Authorization`-Wert (OAuth-Token) durch `*` ersetzt — der Client bekommt nur die
   Antwort von `nginx` zu sehen.
+- [`authorizationPolicy/`](authorizationPolicy/readme.md) — Istio AuthorizationPolicy
+  Allow/Deny anhand der Source-Workload-Identity: zwei Clients (`client-a`,
+  `client-b`) mit jeweils eigenem `ServiceAccount` rufen denselben `backend`-Service
+  auf. Per `kubectl apply -f incident.yaml` lässt sich ein Sicherheitsvorfall
+  simulieren, der gezielt genau `client-b` (anhand Namespace + ServiceAccount)
+  aussperrt, während `client-a` weiterhin zugelassen bleibt.
 
 ## Voraussetzungen
 
