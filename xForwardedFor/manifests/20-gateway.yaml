@@ -1,0 +1,15 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: xff-demo-gateway
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    istio: xff-demo-gateway
+  servers:
+    - port:
+        number: 8080
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"

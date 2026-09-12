@@ -61,6 +61,18 @@ indem man es ins Mesh verlagert statt in jede einzelne Anwendung.
   eines einzelnen Workloads gezielt sperren lässt, per Deklaration ohne
   Codeänderung oder Redeploy des Backends. Die Identität basiert auf
   mTLS-Zertifikaten (SPIFFE-Identity) statt IP. 
+- [`xForwardedFor/`](xForwardedFor/readme.md) — Konfiguration von `X-Forwarded-For`
+  am Istio Ingress-Gateway: ein per Gateway-Injection erzeugtes, eigenständiges
+  Gateway wird über die Pod-Annotation `proxy.istio.io/config`
+  (`gatewayTopology.numTrustedProxies`) so eingestellt, dass es einer definierten
+  Anzahl vorgeschalteter Proxy-Hops beim Auswerten von `X-Forwarded-For` vertraut.
+  **Usecase:** Ohne korrekt gesetztes `numTrustedProxies` verwirft das Gateway
+  entweder die echte Client-IP hinter einem vorgeschalteten Loadbalancer/CDN
+  oder übernimmt eine vom Client frei fälschbare IP aus `X-Forwarded-For` —
+  beides wirkt sich unmittelbar auf IP-basierte `AuthorizationPolicy`s, Logging
+  und Geo-Routing aus. Der Wert muss exakt zur tatsächlichen Hop-Anzahl passen,
+  da sowohl ein zu niedriger als auch ein zu hoher Wert kommentarlos auf die
+  direkte Peer-Adresse zurückfällt.
 
 ## Voraussetzungen
 

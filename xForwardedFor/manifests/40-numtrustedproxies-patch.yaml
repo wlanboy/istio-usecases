@@ -1,0 +1,12 @@
+spec:
+  template:
+    metadata:
+      annotations:
+        # proxy.istio.io/config: pod-lokale Config-Overrides für den Envoy-Proxy
+        # (dieselben Felder wie meshConfig.defaultConfig bzw. die ProxyConfig-CRD).
+        # gatewayTopology.numTrustedProxies sagt Envoy, wie vielen vorgeschalteten
+        # Proxy-Hops (hier: externer LB/CDN vor diesem Gateway) beim Auswerten von
+        # X-Forwarded-For vertraut werden soll.
+        proxy.istio.io/config: |
+          gatewayTopology:
+            numTrustedProxies: ${NUM_TRUSTED_PROXIES}

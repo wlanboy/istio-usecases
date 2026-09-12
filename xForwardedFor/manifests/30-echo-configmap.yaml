@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: echo-conf
+  namespace: ${NAMESPACE}
+  labels:
+    app: echo
+data:
+  nginx.conf: |
+    user  nginx;
+    worker_processes  auto;
+
+    error_log  /var/log/nginx/error.log notice;
+    pid        /var/run/nginx.pid;
+
+    events {
+      worker_connections  1024;
+    }
+
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+
+      sendfile        on;
+      keepalive_timeout  65;
+
+      server {
+        listen       8080;
+        server_name  localhost;
+
+        # gibt genau die Header zurück, an denen sich das XFF-Verhalten des
+        # vorgeschalteten Gateways ablesen lässt:
+        # - x_forwarded_for: der (vom Client potenziell fälschbare) XFF-Header,
+        #   wie ihn das Gateway an den Backend-Request angehängt/durchgereicht hat
+        # - x_envoy_external_address: die vom Gateway anhand von numTrustedProxies
+        #   als vertrauenswürdig ermittelte Client-Adresse (von Envoy selbst gesetzt,
+        #   nicht vom Client beeinflussbar)
+        # - remote_addr: die TCP-Peer-Adresse, wie nginx sie direkt sieht (= der
+        #   Gateway-Envoy-Pod, da dieser die Verbindung zu nginx aufbaut)
+        location / {
+          default_type text/plain;
+          return 200 "remote_addr=$remote_addr\nx_forwarded_for=$http_x_forwarded_for\nx_envoy_external_address=$http_x_envoy_external_address\n";
+        }
+      }
+    }

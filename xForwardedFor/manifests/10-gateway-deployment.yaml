@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xff-demo-gateway
+  namespace: ${NAMESPACE}
+  labels:
+    istio: xff-demo-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      istio: xff-demo-gateway
+  template:
+    metadata:
+      labels:
+        istio: xff-demo-gateway
+      annotations:
+        # "gateway"-Template statt des normalen Sidecars: der Injector ersetzt den
+        # untenstehenden Platzhalter-Container durch einen vollwertigen, eigenständigen
+        # Ingress-Gateway-Envoy (kein App-Container nötig) - ein privater Gateway
+        # nur für diesen Namespace/Usecase, ohne den geteilten istio-ingressgateway
+        # im istio-system-Namespace anzufassen.
+        inject.istio.io/templates: "gateway"
+    spec:
+      serviceAccountName: xff-demo-gateway
+      containers:
+        - name: istio-proxy
+          image: auto

@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: xff-demo-echo
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - xff-demo-gateway
+  http:
+    - route:
+        - destination:
+            host: echo
+            port:
+              number: 80

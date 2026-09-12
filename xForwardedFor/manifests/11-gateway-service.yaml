@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: xff-demo-gateway
+  namespace: ${NAMESPACE}
+  labels:
+    istio: xff-demo-gateway
+spec:
+  selector:
+    istio: xff-demo-gateway
+  ports:
+    - name: http2
+      port: 80
+      targetPort: 8080
