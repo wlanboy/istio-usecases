@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: egress-lockdown-test-client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: curlimages/curl:8.11.0
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      command:
+        - sh
+        - -c
+        - |
+          echo "=== Test 1: interner Aufruf im Cluster (${INTERNAL_TARGET}) ==="
+          INT_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${INTERNAL_TARGET}" 2>/dev/null || echo "FAIL")
+          echo "Status: ${INT_STATUS}"
+          echo
+
+          echo "=== Test 2: externer Aufruf ausserhalb des Clusters (${EXTERNAL_TARGET}) ==="
+          EXT_STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${EXTERNAL_TARGET}" 2>/dev/null || echo "FAIL")
+          echo "Status/Fehler: ${EXT_STATUS}"
+          echo
+
+          if [ "${INT_STATUS}" = "200" ]; then
+            echo "==> Interner Aufruf erfolgreich (erwartet: Registry-Only blockiert nur Cluster-externe Hosts)."
+          else
+            echo "==> Interner Aufruf fehlgeschlagen (unerwartet! Registry-Only sollte In-Cluster-Traffic nicht betreffen)."
+          fi
+
+          if [ "${EXT_STATUS}" = "FAIL" ] || [ "${EXT_STATUS}" = "000" ]; then
+            echo "==> Externer Aufruf blockiert (erwartet: Egress-Lockdown greift, kein ServiceEntry fuer dieses Ziel)."
+          else
+            echo "==> Externer Aufruf war NICHT blockiert (unerwartet, Status ${EXT_STATUS})! Egress-Lockdown greift nicht."
+          fi

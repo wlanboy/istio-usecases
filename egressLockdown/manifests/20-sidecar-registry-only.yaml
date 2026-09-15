@@ -1,0 +1,17 @@
+# Gilt fuer ALLE Workloads in ${NAMESPACE} ohne eigenen, spezifischeren
+# Sidecar-Workload-Selector (kein workloadSelector gesetzt -> Namespace-weit).
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: egress-lockdown
+  namespace: ${NAMESPACE}
+spec:
+  outboundTrafficPolicy:
+    # REGISTRY_ONLY statt (Standard) ALLOW_ANY: ausgehender Traffic wird nur
+    # noch zu Hosts durchgelassen, die Istio in seiner Service-Registry kennt
+    # - also andere Kubernetes-Services im Cluster (automatisch registriert)
+    # oder explizit per ServiceEntry freigegebene externe Hosts. Da in diesem
+    # Namespace bewusst KEIN ServiceEntry existiert, ist jeder Cluster-externe
+    # Host gesperrt. Der Envoy-Sidecar verwirft die Verbindung dafuer sofort
+    # ueber den BlackHoleCluster, statt sie ins Internet durchzureichen.
+    mode: REGISTRY_ONLY

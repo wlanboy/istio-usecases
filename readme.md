@@ -74,6 +74,18 @@ indem man es ins Mesh verlagert statt in jede einzelne Anwendung.
   da sowohl ein zu niedriger als auch ein zu hoher Wert kommentarlos auf die
   direkte Peer-Adresse zurückfällt.
 
+- [`egressLockdown/`](egressLockdown/readme.md) — Istio Egress Lockdown: eine
+  `Sidecar`-Ressource setzt für einen ganzen Namespace
+  `outboundTrafficPolicy.mode: REGISTRY_ONLY`, sodass Workloads darin nur noch
+  im Cluster bekannte Ziele (Kubernetes-Services) erreichen, jeder
+  Cluster-externe Host aber blockiert wird, da kein `ServiceEntry` existiert.
+  **Usecase:** Sperrt einen Namespace vollständig gegen Zugriffe außerhalb
+  des Clusters — etwa für sensible Workloads, die aus Compliance- oder
+  Datenschutzgründen keinerlei ausgehenden Internetzugriff haben dürfen —
+  ohne NetworkPolicies pro Pod pflegen zu müssen und ohne dass die
+  Anwendung selbst etwas davon merkt. Interne Cluster-Kommunikation bleibt
+  unangetastet.
+
 ## Voraussetzungen
 
 - laufender Kubernetes-Cluster mit installiertem Istio
