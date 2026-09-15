@@ -16,7 +16,7 @@ else
   render "${MANIFESTS_DIR}/00-namespace.yaml" | kubectl apply -f -
 fi
 
-echo "==> Wende restliche Manifeste an (nginx-Testziel + Sidecar mit REGISTRY_ONLY) in Namespace '${NAMESPACE}'"
+echo "==> Wende restliche Manifeste an (nginx-Testziel, Sidecar mit REGISTRY_ONLY, ServiceEntry-Ausnahme für git.gmk.lan) in Namespace '${NAMESPACE}'"
 for f in "${MANIFESTS_DIR}"/*.yaml; do
   [[ "$(basename "${f}")" == "00-namespace.yaml" ]] && continue
   render "${f}" | kubectl apply -f -
@@ -26,4 +26,4 @@ echo "==> Warte auf nginx-Deployment"
 kubectl -n "${NAMESPACE}" rollout status deployment/nginx --timeout=90s
 
 echo "==> Fertig. Ressourcen in Namespace '${NAMESPACE}':"
-kubectl -n "${NAMESPACE}" get deployment,service,sidecar
+kubectl -n "${NAMESPACE}" get deployment,service,sidecar,serviceentry

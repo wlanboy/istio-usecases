@@ -1,0 +1,19 @@
+# Gezielte Ausnahme vom Egress-Lockdown (manifests/20-sidecar-registry-only.yaml):
+# registriert git.gmk.lan:3300 (Forgejo) in Istios Service-Registry, damit
+# REGISTRY_ONLY diesen einen externen Host durchlaesst. Alle anderen
+# Cluster-externen Hosts bleiben weiterhin blockiert, da fuer sie kein
+# ServiceEntry existiert.
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: forgejo-git-gmk-lan
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - git.gmk.lan
+  location: MESH_EXTERNAL
+  resolution: DNS
+  ports:
+    - number: 3300
+      name: https
+      protocol: TLS

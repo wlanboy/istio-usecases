@@ -10,8 +10,10 @@ spec:
     # REGISTRY_ONLY statt (Standard) ALLOW_ANY: ausgehender Traffic wird nur
     # noch zu Hosts durchgelassen, die Istio in seiner Service-Registry kennt
     # - also andere Kubernetes-Services im Cluster (automatisch registriert)
-    # oder explizit per ServiceEntry freigegebene externe Hosts. Da in diesem
-    # Namespace bewusst KEIN ServiceEntry existiert, ist jeder Cluster-externe
-    # Host gesperrt. Der Envoy-Sidecar verwirft die Verbindung dafuer sofort
-    # ueber den BlackHoleCluster, statt sie ins Internet durchzureichen.
+    # oder explizit per ServiceEntry freigegebene externe Hosts. Jeder nicht
+    # per ServiceEntry freigegebene Cluster-externe Host bleibt gesperrt -
+    # der Envoy-Sidecar verwirft die Verbindung dafuer sofort ueber den
+    # BlackHoleCluster, statt sie ins Internet durchzureichen. Die einzige
+    # bewusste Ausnahme in diesem Namespace ist git.gmk.lan (Forgejo), siehe
+    # manifests/21-serviceentry-forgejo.yaml.
     mode: REGISTRY_ONLY

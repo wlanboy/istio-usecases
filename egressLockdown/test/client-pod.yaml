@@ -31,6 +31,14 @@ spec:
           echo "Status/Fehler: ${EXT_STATUS}"
           echo
 
+          echo "=== Test 3: per ServiceEntry erlaubter externer Aufruf (${ALLOWED_EXTERNAL_TARGET}) ==="
+          # -k: hier geht es nur um die Erreichbarkeit (blockiert der Sidecar
+          # oder nicht), nicht um die Gueltigkeit des TLS-Zertifikats von
+          # git.gmk.lan.
+          ALLOWED_STATUS=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "${ALLOWED_EXTERNAL_TARGET}" 2>/dev/null || echo "FAIL")
+          echo "Status/Fehler: ${ALLOWED_STATUS}"
+          echo
+
           if [ "${INT_STATUS}" = "200" ]; then
             echo "==> Interner Aufruf erfolgreich (erwartet: Registry-Only blockiert nur Cluster-externe Hosts)."
           else
@@ -41,4 +49,10 @@ spec:
             echo "==> Externer Aufruf blockiert (erwartet: Egress-Lockdown greift, kein ServiceEntry fuer dieses Ziel)."
           else
             echo "==> Externer Aufruf war NICHT blockiert (unerwartet, Status ${EXT_STATUS})! Egress-Lockdown greift nicht."
+          fi
+
+          if [ "${ALLOWED_STATUS}" = "FAIL" ] || [ "${ALLOWED_STATUS}" = "000" ]; then
+            echo "==> Erlaubter externer Aufruf fehlgeschlagen (unerwartet! ServiceEntry fuer git.gmk.lan sollte durchlassen)."
+          else
+            echo "==> Erlaubter externer Aufruf erfolgreich (erwartet: ServiceEntry gibt genau dieses Ziel frei, Status ${ALLOWED_STATUS})."
           fi

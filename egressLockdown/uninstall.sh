@@ -14,7 +14,7 @@ if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "==> Entferne Ressourcen dieses Usecases (Sidecar, nginx-Deployment/-Service/-ConfigMap) aus Namespace '${NAMESPACE}'"
+echo "==> Entferne Ressourcen dieses Usecases (Sidecar, ServiceEntry, nginx-Deployment/-Service/-ConfigMap) aus Namespace '${NAMESPACE}'"
 for f in $(ls -r "${MANIFESTS_DIR}"/*.yaml); do
   [[ "$(basename "${f}")" == "00-namespace.yaml" ]] && continue
   render "${f}" | kubectl delete -f - --ignore-not-found

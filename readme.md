@@ -77,13 +77,16 @@ indem man es ins Mesh verlagert statt in jede einzelne Anwendung.
 - [`egressLockdown/`](egressLockdown/readme.md) — Istio Egress Lockdown: eine
   `Sidecar`-Ressource setzt für einen ganzen Namespace
   `outboundTrafficPolicy.mode: REGISTRY_ONLY`, sodass Workloads darin nur noch
-  im Cluster bekannte Ziele (Kubernetes-Services) erreichen, jeder
-  Cluster-externe Host aber blockiert wird, da kein `ServiceEntry` existiert.
+  im Cluster bekannte Ziele (Kubernetes-Services) sowie einen per
+  `ServiceEntry` gezielt freigegebenen internen Forgejo-Server
+  (`git.gmk.lan:3300`) erreichen — jeder andere Cluster-externe Host wird
+  blockiert.
   **Usecase:** Sperrt einen Namespace vollständig gegen Zugriffe außerhalb
   des Clusters — etwa für sensible Workloads, die aus Compliance- oder
-  Datenschutzgründen keinerlei ausgehenden Internetzugriff haben dürfen —
-  ohne NetworkPolicies pro Pod pflegen zu müssen und ohne dass die
-  Anwendung selbst etwas davon merkt. Interne Cluster-Kommunikation bleibt
+  Datenschutzgründen keinerlei ausgehenden Internetzugriff haben dürfen,
+  aber dennoch z. B. auf den internen Git-Server zugreifen müssen — ohne
+  NetworkPolicies pro Pod pflegen zu müssen und ohne dass die Anwendung
+  selbst etwas davon merkt. Interne Cluster-Kommunikation bleibt
   unangetastet.
 
 ## Voraussetzungen
