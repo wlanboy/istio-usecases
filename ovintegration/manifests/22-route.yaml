@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ovintegration-${NAMESPACE}
+  namespace: istio-system
+  labels:
+    app: ovintegration
+spec:
+  to:
+    kind: Service
+    name: istio-ingressgateway
+  port:
+    targetPort: http2
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

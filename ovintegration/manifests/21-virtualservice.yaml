@@ -1,0 +1,16 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ovintegration-nginx
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - ovintegration-gateway
+  http:
+    - route:
+        - destination:
+            host: nginx.${NAMESPACE}.svc.cluster.local
+            port:
+              number: 80
