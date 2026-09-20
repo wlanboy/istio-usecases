@@ -8,6 +8,11 @@ spec:
     - "*"
   gateways:
     - ovintegration-gateway
+    # Zusaetzlich an das zentrale TLS-Gateway aus install-istio-passthrough.sh gebunden, damit
+    # dieselbe App ueber beide Wege testbar ist: lokale Route/edge-TLS (Weg A, siehe run.sh) UND
+    # zentrale Wildcard-Route/TLS-am-Envoy (Weg B). Existiert das Gateway nicht (nur install.sh
+    # ohne install-istio-passthrough.sh ausgefuehrt), ist diese Referenz wirkungslos, kein Fehler.
+    - istio-system/ovintegration-gateway-tls
   http:
     - route:
         - destination:

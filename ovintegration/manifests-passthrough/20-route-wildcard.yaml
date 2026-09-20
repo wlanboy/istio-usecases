@@ -1,0 +1,21 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: istio-ingressgateway-wildcard
+  namespace: istio-system
+  labels:
+    app: ovintegration
+spec:
+  # host darf KEIN literales "*" enthalten (Route-API verlangt einen normalen DNS1123-Hostnamen).
+  # wildcardPolicy: Subdomain leitet daraus selbst die Abdeckung "*.${APPS_DOMAIN}" ab, siehe
+  # RouteSpec-Doku in github.com/openshift/api/route/v1/types.go und wildcard-ingress.md.
+  host: "wildcard.${APPS_DOMAIN}"
+  wildcardPolicy: Subdomain
+  to:
+    kind: Service
+    name: istio-ingressgateway
+  port:
+    targetPort: https
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect

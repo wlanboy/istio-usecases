@@ -1,0 +1,27 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: ovintegration-gateway-tls
+  namespace: istio-system
+  labels:
+    app: ovintegration
+spec:
+  # exportTo explizit gesetzt (Default in Istio ist zwar bereits "*"), damit die
+  # Cross-Namespace-Bindung "gateways: [istio-system/ovintegration-gateway-tls]" aus
+  # VirtualServices anderer Namespaces (z. B. manifests/21-virtualservice.yaml) garantiert
+  # funktioniert, unabhaengig von einem evtl. per MeshConfig gesetzten
+  # defaultGatewayExportTo-Override.
+  exportTo:
+    - "*"
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: ${CERT_SECRET_NAME}
+      hosts:
+        - "*"
