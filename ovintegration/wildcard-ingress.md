@@ -29,7 +29,11 @@ metadata:
   name: istio-ingressgateway-wildcard
   namespace: istio-system
 spec:
-  host: "*.apps.<cluster-domain>"   # ersetzen: cluster-eigene apps-Domain, siehe `oc get ingresscontroller/default -n openshift-ingress-operator -o jsonpath='{.status.domain}'`
+  # host darf KEIN literales "*" enthalten (Route-API verlangt einen normalen DNS1123-Hostnamen,
+  # ein "*" wird bei der Validierung abgelehnt: "host must conform to DNS 1123 naming conventions").
+  # wildcardPolicy: Subdomain leitet aus "wildcard.apps.<cluster-domain>" selbst die Abdeckung
+  # "*.apps.<cluster-domain>" ab, siehe RouteSpec-Doku in github.com/openshift/api/route/v1/types.go.
+  host: "wildcard.apps.<cluster-domain>"   # ersetzen: cluster-eigene apps-Domain, siehe `oc get ingresscontroller/default -n openshift-ingress-operator -o jsonpath='{.status.domain}'`
   wildcardPolicy: Subdomain
   to:
     kind: Service
@@ -40,6 +44,12 @@ spec:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
 ```
+
+Der konkrete Hostname im `host`-Feld (`wildcard.apps.<cluster-domain>`) ist frei waehlbar und muss
+selbst nicht angesprochen werden - er dient nur dazu, dem Router die Subdomain mitzuteilen, die er
+per Wildcard abdecken soll (`*.apps.<cluster-domain>`). Anfragen an z. B.
+`ovintegration-foo.apps.<cluster-domain>` landen damit ebenso beim Gateway-Service wie Anfragen an
+den `host`-Wert selbst.
 
 **Warum `wildcardPolicy: Subdomain` und nicht mehrere einzelne Routes?** Mit einzelnen Routes
 muesste fuer jeden neuen Hostnamen (= jede neue App/jeden neuen Namespace) eine eigene `Route`
