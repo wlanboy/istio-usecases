@@ -38,6 +38,16 @@ zusaetzlicher `oc adm policy`-Schritt noetig. Anders als bei `anyuid`/`privilege
 keine SCC-Huerde, weil es sich um ganz normale RBAC-Rechte auf ein Kubernetes-Objekt handelt,
 nicht um Pod-Security.
 
+## Voraussetzung: kein IngressController-Umbau noetig
+
+Anders als bei [`wildcard-ingress.md`](wildcard-ingress.md) (dort erfordert die Wildcard-Route
+einen expliziten Cluster-Admin-Patch `routeAdmission.wildcardPolicy: WildcardsAllowed`) braucht
+`termination: passthrough` **keine** Aenderung am `IngressController`. Passthrough ist ein
+Standard-Terminierungsmodus, den der OpenShift-Router ohne Opt-in unterstuetzt; lediglich
+`insecureEdgeTerminationPolicy` ist bei `passthrough` auf `None`/leer oder `Redirect`
+eingeschraenkt (kein `Allow`, siehe Schritt 4), was die hier verwendete `Redirect`-Policy bereits
+erfuellt.
+
 ## Schritt 1: TLS-Secret mit der Sub-CA-Kette anlegen
 
 ```bash
