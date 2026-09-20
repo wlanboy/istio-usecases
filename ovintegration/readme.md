@@ -158,6 +158,33 @@ Istio-Komponenten kommen mit `anyuid` aus. Das ist der ganze Sinn von `istio-cni
 elevated privileges wandern aus jedem einzelnen App-Pod in einen einzigen, zentral
 kontrollierten DaemonSet.
 
+### 1b. Alternative: Istio Ingress Gateway als alleinigen Eingang, TLS am Envoy (optional)
+
+```bash
+./install-istio-passthrough.sh
+```
+
+Baut auf Schritt 1 auf (fuehrt dieselben Helm-Installationen erneut/idempotent aus) und schaltet
+zusaetzlich frei, was [`wildcard-ingress.md`](wildcard-ingress.md) und
+[`custom-ca-tls.md`](custom-ca-tls.md) als manuelle Schritte beschreiben:
+
+- Patcht `ingresscontroller/default` auf `routeAdmission.wildcardPolicy: WildcardsAllowed`
+  (Cluster-weite Aenderung).
+- Legt ein selbstsigniertes Wildcard-Zertifikat (`*.<apps-domain>`) als Secret
+  `ovintegration-gateway-cert` in `istio-system` an (nur fuer Demo-Zwecke; existiert das Secret
+  bereits, z. B. mit einem echten CA-Zertifikat, wird es nicht ueberschrieben).
+- Legt ein zentrales `Gateway` `ovintegration-gateway-tls` (HTTPS, Port 443, `credentialName`
+  auf dieses Secret) sowie eine Wildcard-`Route` `istio-ingressgateway-wildcard`
+  (`termination: passthrough`) an, beide in `istio-system`
+  (Manifeste in `manifests-passthrough/`).
+
+Danach terminiert Envoy TLS fuer `*.<apps-domain>` selbst; der Router leitet nur noch per SNI
+durch. Damit ein per `./install.sh <namespace>` installierter Demo-Usecase ueber dieses zentrale
+Gateway erreichbar wird (statt nur ueber seine eigene per-Namespace Route), muss dessen
+`VirtualService` zusaetzlich `gateways: [istio-system/ovintegration-gateway-tls]` referenzieren,
+siehe `custom-ca-tls.md` Schritt 3. Ist optional - ohne diesen Schritt funktioniert der
+Demo-Usecase weiterhin unveraendert ueber seinen eigenen Hostnamen (Schritt 2 unten).
+
 ### 2. Demo-Usecase installieren (pro Namespace, wiederholbar)
 
 ```bash
@@ -171,6 +198,9 @@ Legt (falls noch nicht vorhanden) den Namespace mit `istio-injection: enabled` a
 da sie auf den dortigen `istio-ingressgateway`-Service zeigt) an. Die Route bekommt **keinen**
 festen Hostnamen. OpenShift vergibt automatisch einen unter der Cluster-Wildcard-Domain
 (`<name>-<namespace>.apps.<cluster-domain>`), das Skript liest ihn zurueck und gibt ihn aus.
+Der `VirtualService` referenziert zusaetzlich immer `istio-system/ovintegration-gateway-tls`
+(siehe Schritt 1b); ohne `install-istio-passthrough.sh` existiert dieses Gateway einfach nicht
+und die Referenz bleibt wirkungslos.
 
 Existiert der Namespace bereits, wird `00-namespace.yaml` uebersprungen; alle anderen
 Manifeste werden trotzdem (erneut) appliziert.
@@ -182,11 +212,17 @@ Manifeste werden trotzdem (erneut) appliziert.
 ./run.sh mein-namespace          # eigenen Namespace verwenden
 ```
 
-Liest den Hostnamen der zugehoerigen Route aus `istio-system`, ruft ihn per `curl -k https://...`
-auf und prueft zwei Dinge: HTTP-Status 200 **und** den Response-Header `server: istio-envoy`.
-Letzterer beweist, dass die Antwort tatsaechlich durch den Istio-Ingress-Gateway-Envoy
-(und nicht direkt von nginx) gelaufen ist. Der OpenShift-Router selbst faelscht/entfernt
-diesen Header nicht.
+Testet **Weg A** immer: den Hostnamen der eigenen Route aus `istio-system`, `curl -k https://...`,
+prueft HTTP-Status 200 **und** den Response-Header `server: istio-envoy`. Letzterer beweist, dass
+die Antwort tatsaechlich durch den Istio-Ingress-Gateway-Envoy (und nicht direkt von nginx)
+gelaufen ist. Der OpenShift-Router selbst faelscht/entfernt diesen Header nicht.
+
+Wurde zusaetzlich [`./install-istio-passthrough.sh`](#1b-alternative-istio-ingress-gateway-als-alleinigen-eingang-tls-am-envoy-optional)
+ausgefuehrt, testet `run.sh` automatisch auch **Weg B**: einen frei erfundenen Testhost
+(`<namespace>-passthrough.<apps-domain>`, bewusst ohne eigene Route) ueber die Wildcard-Route
+`istio-ingressgateway-wildcard`, bei der TLS erst am Envoy terminiert (`termination: passthrough`).
+Dafuer muss `manifests/21-virtualservice.yaml` (bereits Teil von `install.sh`) auch an
+`istio-system/ovintegration-gateway-tls` gebunden sein - ist per Default der Fall.
 
 ## Troubleshooting
 
@@ -255,6 +291,8 @@ dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
   externen Eingang des Clusters machen (Wildcard-Route statt Route pro Namespace).
 - [`custom-ca-tls.md`](custom-ca-tls.md): TLS mit einem von der eigenen Sub-CA ausgestellten
   Zertifikat direkt am Envoy (statt am Router) terminieren.
+- `./install-istio-passthrough.sh` automatisiert die Kombination aus beiden Dokumenten
+  (Wildcard-Route + TLS-Terminierung am Envoy), siehe Schritt 1b oben.
 
 ## Aufraeumen
 
@@ -266,6 +304,12 @@ dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
 Entfernt Route, Gateway, VirtualService und nginx-Deployment/-Service/-ConfigMap. Der
 Namespace selbst sowie die Istio-Plattform bleiben bestehen (koennten von weiteren
 Demo-Namespaces mitgenutzt werden).
+
+```bash
+./uninstall-istio-passthrough.sh # falls Schritt 1b genutzt wurde: Wildcard-Route, zentrales
+                                  # TLS-Gateway, Zertifikat-Secret und die Aenderung am
+                                  # IngressController entfernen (Basis-Plattform bleibt bestehen)
+```
 
 ```bash
 ./uninstall-istio.sh             # komplette Istio-Plattform entfernen (alle Demo-Namespaces vorher aufraeumen!)
