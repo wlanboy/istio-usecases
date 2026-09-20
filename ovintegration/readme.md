@@ -246,6 +246,16 @@ das die Ursache - `20-gateway.yaml` entsprechend anpassen.
 Ziel geroutet, das nicht der Ingress-Gateway ist (z. B. falscher Service-Name in
 `22-route.yaml`), oder ein anderes Gateway/eine andere Route im Cluster hat Vorrang.
 
+## Weiterfuehrend
+
+Die Basis-Installation deckt nur den einen Demo-Hostnamen ab und terminiert TLS am Router mit
+dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
+
+- [`wildcard-ingress.md`](wildcard-ingress.md) - den Istio Ingress Gateway zum alleinigen
+  externen Eingang des Clusters machen (Wildcard-Route statt Route pro Namespace).
+- [`custom-ca-tls.md`](custom-ca-tls.md) - TLS mit einem von der eigenen Sub-CA ausgestellten
+  Zertifikat direkt am Envoy (statt am Router) terminieren.
+
 ## Aufraeumen
 
 ```bash
