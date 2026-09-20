@@ -15,21 +15,21 @@ nennt durchgaengig `--set profile=openshift`. Das stimmt fuer `istioctl install`
 `openshift` ein **IstioOperator-Profil**, das intern `global.platform: openshift` setzt), ist
 fuer **rohe Helm-Charts** (`helm install ...`) aber inzwischen veraltet/falsch: geprueft gegen
 den aktuellen Chart-Quellcode (u. a. Release 1.31.0) gibt es dort **keine**
-`files/profile-openshift.yaml` mehr - der Helm-Wert `profile=openshift` fuehrt zu
+`files/profile-openshift.yaml` mehr. Der Helm-Wert `profile=openshift` fuehrt zu
 `Error: unknown profile "openshift"` und bricht die Installation ab. Der tatsaechlich
 existierende, wirksame Wert heisst **`platform=openshift`** (laedt
 `files/profile-platform-openshift.yaml` in jedem Chart). Alle Skripte hier verwenden deshalb
 `--set platform=openshift`. (Stand September 2026 ist `install-OpenShift.md` in
-`istio/istio@master` selbst noch inkonsistent - es zeigt weiterhin `--set profile=openshift`
+`istio/istio@master` selbst noch inkonsistent: es zeigt weiterhin `--set profile=openshift`
 gegen lokale Chart-Pfade, obwohl `files/profile-openshift.yaml` im selben Chart nicht mehr
 existiert.)
 
 `platform=openshift` setzt u. a.:
 
-- `pilot.cni.enabled=true`, `cni.provider=multus`, `cni.chained=false` - Traffic-Redirection
+- `pilot.cni.enabled=true`, `cni.provider=multus`, `cni.chained=false`: Traffic-Redirection
   laeuft ueber den `istio-cni`-DaemonSet statt ueber einen privilegierten `istio-init`
   Init-Container in jedem Pod (OpenShift verbietet Pods sonst `NET_ADMIN`/`NET_RAW` per SCC).
-- `cni.cniBinDir=/var/lib/cni/bin`, `cni.cniConfDir=/etc/cni/multus/net.d` - die auf OpenShift
+- `cni.cniBinDir=/var/lib/cni/bin`, `cni.cniConfDir=/etc/cni/multus/net.d`: die auf OpenShift
   per Multus verwalteten CNI-Pfade statt der Kubernetes-Standardpfade.
 - `seLinuxOptions.type=spc_t` fuer die `istio-cni`-DaemonSet-Pods.
 
@@ -65,21 +65,21 @@ Node-Ebene (einmalig pro Cluster):
 ```
 
 - Die **OpenShift Route** liegt zwingend im selben Namespace wie der referenzierte Service
-  (`istio-ingressgateway`), also in `istio-system` - unabhaengig davon, in welchem Namespace
+  (`istio-ingressgateway`), also in `istio-system`, unabhaengig davon, in welchem Namespace
   der Demo-Workload (`nginx`) laeuft. Mehrere Demo-Namespaces teilen sich denselben Gateway/
   Router und unterscheiden sich nur durch eigene `Route`/`Gateway`/`VirtualService`-Objekte.
 - Das Istio-`Gateway`-Objekt selektiert die Ingress-Gateway-Pods ueber das Label `istio:
   ingressgateway` (**nicht** `istio: istio-ingressgateway`). Der `istio/gateway`-Helm-Chart
   leitet dieses Label aus dem Release-Namen ab und entfernt dabei automatisch das Praefix
   `istio-` (`gateway.selectorLabels` in `_helpers.tpl`: `istio: {{ ... | trimPrefix "istio-"
-  }}`) - bei `helm install istio-ingressgateway istio/gateway` (siehe `install-istio.sh`) sind
+  }}`). Bei `helm install istio-ingressgateway istio/gateway` (siehe `install-istio.sh`) sind
   die tatsaechlichen Pod-Labels also `app: istio-ingressgateway`, `istio: ingressgateway`. Ein
   falscher Selector-Wert `istio: istio-ingressgateway` matcht keinen Pod und faellt nicht beim
   Installieren auf, sondern erst beim Testen (`run.sh` liefert dann 503 vom Router, siehe
   Troubleshooting).
 - Der Ingress-Gateway-Service laeuft hier bewusst als `ClusterIP` (nicht `LoadBalancer`):
   die externe Erreichbarkeit kommt bereits vom OpenShift-Router/der Route, ein zusaetzlicher
-  Cloud-Loadbalancer ist nicht noetig - relevant gerade bei On-Prem-/Bare-Metal-OpenShift auf
+  Cloud-Loadbalancer ist nicht noetig, relevant gerade bei On-Prem-/Bare-Metal-OpenShift auf
   OVN-Kubernetes ohne Cloud-Provider-Integration.
 - `istio-cni` ersetzt den privilegierten `istio-init`-Init-Container durch einen einzelnen
   privilegierten DaemonSet-Pod pro Node (Namespace `kube-system`, analog zu OVN-Kubernetes'
@@ -87,13 +87,13 @@ Node-Ebene (einmalig pro Cluster):
   in die bestehende OVN-Kubernetes-Konfiguration eingehaengt (das verbietet OpenShift), sondern
   ueber **Multus** als eigenstaendiges `NetworkAttachmentDefinition` aufgerufen. Der
   Sidecar-Injector setzt dafuer automatisch die Pod-Annotation
-  `k8s.v1.cni.cncf.io/networks: default/istio-cni` (`pilot.cni.provider=multus`) - keine
+  `k8s.v1.cni.cncf.io/networks: default/istio-cni` (`pilot.cni.provider=multus`). Keine
   manuelle Namespace-Konfiguration noetig.
 - OVN-Kubernetes selbst bleibt die primaere CNI fuer Pod-IP-Vergabe und Kubernetes-`NetworkPolicy`;
   `istio-cni` haengt sich nur zusaetzlich ein, um im Pod-Netzwerk-Namespace die iptables-Regeln
   fuer den Envoy-Sidecar zu setzen. Eigene `NetworkPolicy`-Objekte (OVN-Kubernetes wertet diese
   nativ aus) muessen weiterhin Traffic zu `istiod` (Port 15012, 15017) und zwischen Sidecars
-  erlauben, falls im Cluster ein restriktives Default-Deny gilt - das ist unabhaengig von Istio
+  erlauben, falls im Cluster ein restriktives Default-Deny gilt. Das ist unabhaengig von Istio
   und betrifft jede Mesh-Installation auf einem Cluster mit aktiven `NetworkPolicy`-Objekten.
 
 ## Voraussetzungen
@@ -102,7 +102,7 @@ Node-Ebene (einmalig pro Cluster):
   `kube-system`) und OVN-Kubernetes als Netzwerk-Plugin (Standard seit OpenShift 4.14+).
 - `oc` mit gueltigem Kontext auf diesen Cluster (`oc whoami`, `oc get clusterversion`).
 - `helm` >= 3.x lokal installiert.
-- Kein bereits installiertes Red Hat OpenShift Service Mesh (Operator) im selben Cluster -
+- Kein bereits installiertes Red Hat OpenShift Service Mesh (Operator) im selben Cluster,
   kollidiert mit einer parallelen Open-Source-Istio-Installation (gleiche CRDs/Webhooks).
 
 ## Installation
@@ -142,7 +142,7 @@ wenn er sie nicht anders bestimmen kann (`ProxyUID | default "1337"` im
 Sidecar-Injection-Template). Seit Istio 1.20 liest `GetProxyIDs()` im Injection-Webhook
 zunaechst die OpenShift-Namespace-Annotation `openshift.io/sa.scc.uid-range` (die jedes normal
 angelegte Project/Namespace automatisch bekommt) und verwendet das Maximum dieser Range als
-`runAsUser`/`runAsGroup` - dadurch bleibt der Sidecar i. d. R. bereits innerhalb der von
+`runAsUser`/`runAsGroup`. Dadurch bleibt der Sidecar i. d. R. bereits innerhalb der von
 `restricted-v2` erlaubten `MustRunAsRange`, ohne `anyuid` ("Improved usage on OpenShift
 clusters by removing the need to grant the `anyuid` SCC privilege", Istio-1.20-Release-Notes).
 `anyuid` ist hier trotzdem als Sicherheitsnetz drin: die automatische Range-Erkennung greift
@@ -154,7 +154,7 @@ any security context constraint` abgelehnt.
 
 **Warum `privileged`-SCC nur fuer `istio-cni`?** Nur der `istio-cni-node`-DaemonSet braucht
 echte Node-Rechte (fremde Pod-Netzwerk-Namespaces umkonfigurieren). Alle anderen
-Istio-Komponenten kommen mit `anyuid` aus - das ist der ganze Sinn von `istio-cni`: die
+Istio-Komponenten kommen mit `anyuid` aus. Das ist der ganze Sinn von `istio-cni`: die
 elevated privileges wandern aus jedem einzelnen App-Pod in einen einzigen, zentral
 kontrollierten DaemonSet.
 
@@ -169,7 +169,7 @@ Legt (falls noch nicht vorhanden) den Namespace mit `istio-injection: enabled` a
 `anyuid`-SCC fuer dessen ServiceAccounts, deployt ein `nginx` als Testziel und legt
 `Gateway`/`VirtualService` (im Demo-Namespace) sowie eine `Route` (zwingend in `istio-system`,
 da sie auf den dortigen `istio-ingressgateway`-Service zeigt) an. Die Route bekommt **keinen**
-festen Hostnamen - OpenShift vergibt automatisch einen unter der Cluster-Wildcard-Domain
+festen Hostnamen. OpenShift vergibt automatisch einen unter der Cluster-Wildcard-Domain
 (`<name>-<namespace>.apps.<cluster-domain>`), das Skript liest ihn zurueck und gibt ihn aus.
 
 Existiert der Namespace bereits, wird `00-namespace.yaml` uebersprungen; alle anderen
@@ -185,13 +185,13 @@ Manifeste werden trotzdem (erneut) appliziert.
 Liest den Hostnamen der zugehoerigen Route aus `istio-system`, ruft ihn per `curl -k https://...`
 auf und prueft zwei Dinge: HTTP-Status 200 **und** den Response-Header `server: istio-envoy`.
 Letzterer beweist, dass die Antwort tatsaechlich durch den Istio-Ingress-Gateway-Envoy
-(und nicht direkt von nginx) gelaufen ist - der OpenShift-Router selbst faelscht/entfernt
+(und nicht direkt von nginx) gelaufen ist. Der OpenShift-Router selbst faelscht/entfernt
 diesen Header nicht.
 
 ## Troubleshooting
 
 **`Error: unknown profile "openshift"` beim `helm install`.** `profile=openshift` statt
-`platform=openshift` verwendet - siehe Abschnitt oben. Betrifft auch `istioctl`-Beispiele, die
+`platform=openshift` verwendet, siehe Abschnitt oben. Betrifft auch `istioctl`-Beispiele, die
 1:1 auf Helm uebertragen wurden.
 
 **Pods in `istio-system`/Demo-Namespace bleiben im Status `Pending`/`CrashLoopBackOff`,
@@ -213,7 +213,7 @@ oc -n kube-system get pods -l k8s-app=istio-cni-node
 **App-Pod haengt in `ContainerCreating`, `istio-proxy`-Container fehlt komplett oder Pod
 haengt mit `network: plugin type="istio-cni" failed`.** Multus findet das
 `NetworkAttachmentDefinition` `istio-cni` nicht (liegt standardmaessig im Namespace `default`
-und wird per `k8s.v1.cni.cncf.io/networks: default/istio-cni`-Annotation referenziert - diese
+und wird per `k8s.v1.cni.cncf.io/networks: default/istio-cni`-Annotation referenziert. Diese
 Annotation setzt der Sidecar-Injector automatisch, sofern `pilot.cni.provider=multus` beim
 `istiod`-Install gesetzt war). Pruefen mit:
 ```bash
@@ -240,7 +240,7 @@ oc -n istio-system get pods -l istio=ingressgateway --show-labels
 oc -n <namespace> get gateway ovintegration-gateway -o jsonpath='{.spec.selector}'
 ```
 Stimmen die Labels aus der ersten Zeile nicht mit dem Selector aus der zweiten ueberein, ist
-das die Ursache - `20-gateway.yaml` entsprechend anpassen.
+das die Ursache. `20-gateway.yaml` entsprechend anpassen.
 
 **`curl` liefert HTTP 200, aber ohne `server: istio-envoy`.** Die Route hat direkt auf ein
 Ziel geroutet, das nicht der Ingress-Gateway ist (z. B. falscher Service-Name in
@@ -251,9 +251,9 @@ Ziel geroutet, das nicht der Ingress-Gateway ist (z. B. falscher Service-Name in
 Die Basis-Installation deckt nur den einen Demo-Hostnamen ab und terminiert TLS am Router mit
 dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
 
-- [`wildcard-ingress.md`](wildcard-ingress.md) - den Istio Ingress Gateway zum alleinigen
+- [`wildcard-ingress.md`](wildcard-ingress.md): den Istio Ingress Gateway zum alleinigen
   externen Eingang des Clusters machen (Wildcard-Route statt Route pro Namespace).
-- [`custom-ca-tls.md`](custom-ca-tls.md) - TLS mit einem von der eigenen Sub-CA ausgestellten
+- [`custom-ca-tls.md`](custom-ca-tls.md): TLS mit einem von der eigenen Sub-CA ausgestellten
   Zertifikat direkt am Envoy (statt am Router) terminieren.
 
 ## Aufraeumen
@@ -263,7 +263,7 @@ dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
 ./uninstall.sh mein-namespace    # eigenen Namespace verwenden
 ```
 
-Entfernt Route, Gateway, VirtualService und nginx-Deployment/-Service/-ConfigMap - der
+Entfernt Route, Gateway, VirtualService und nginx-Deployment/-Service/-ConfigMap. Der
 Namespace selbst sowie die Istio-Plattform bleiben bestehen (koennten von weiteren
 Demo-Namespaces mitgenutzt werden).
 

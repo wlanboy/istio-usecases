@@ -2,7 +2,7 @@
 
 Die Basis-Installation (`readme.md`) baut pro Demo-Namespace genau eine `Route` mit
 automatisch vergebenem Hostnamen (`ovintegration-<namespace>.apps.<cluster-domain>`). Nur
-Traffic fuer **diesen einen Hostnamen** landet beim `istio-ingressgateway`-Service - jede
+Traffic fuer **diesen einen Hostnamen** landet beim `istio-ingressgateway`-Service. Jede
 andere `Route` im Cluster geht an ihrer eigenen `Service`-Definition vorbei am Envoy. Dieses
 Dokument beschreibt, was zusaetzlich noetig ist, damit der Istio Ingress Gateway zum
 **alleinigen externen Eingang des Clusters** wird (statt nur fuer diese eine Demo-Route).
@@ -11,7 +11,7 @@ Dokument beschreibt, was zusaetzlich noetig ist, damit der Istio Ingress Gateway
 
 Der OpenShift-Router (HAProxy) routet ausschliesslich anhand des `Host`-Headers gegen
 existierende `Route`-Objekte. Ohne passende `Route` gibt es fuer eine Anfrage keinen Weg zum
-Ziel-Service - unabhaengig davon, was innerhalb des Mesh an `Gateway`/`VirtualService`
+Ziel-Service, unabhaengig davon, was innerhalb des Mesh an `Gateway`/`VirtualService`
 konfiguriert ist. Der Istio-`Gateway` in `manifests/20-gateway.yaml` matcht zwar bereits
 `hosts: ["*"]` (also jeden Host-Header, den Envoy zu sehen bekommt), aber Envoy bekommt nur
 die Anfragen zu sehen, die der Router ihm vorher per `Route` zuweist.
@@ -43,7 +43,7 @@ spec:
 
 **Warum `wildcardPolicy: Subdomain` und nicht mehrere einzelne Routes?** Mit einzelnen Routes
 muesste fuer jeden neuen Hostnamen (= jede neue App/jeden neuen Namespace) eine eigene `Route`
-angelegt werden - der Router selbst waere weiterhin die Stelle, die entscheidet, was uebehaupt
+angelegt werden. Der Router selbst waere weiterhin die Stelle, die entscheidet, was ueberhaupt
 beim Mesh ankommt. Eine Wildcard-Route macht den Router zu einem reinen TLS-Terminator/Pass-
 Through fuer die Subdomain und verlagert die eigentliche Host-basierte Routing-Entscheidung
 komplett zu Istio (`VirtualService`-Objekte je App), wo sie mit Mesh-Features (Traffic
@@ -61,15 +61,15 @@ oc patch ingresscontroller/default -n openshift-ingress-operator --type=merge \
 ```
 
 Das ist eine **Cluster-weite, Cluster-Admin-Aenderung** (IngressController-Operator-Namespace,
-nicht der Demo-Namespace) - sie erlaubt Wildcard-Routes fuer den gesamten Cluster, nicht nur
-fuer `istio-system`. Quelle: [Ingress Operator - Konfiguration (Red Hat Docs, routeAdmission)](https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/networking/configuring-ingress),
+nicht der Demo-Namespace). Sie erlaubt Wildcard-Routes fuer den gesamten Cluster, nicht nur
+fuer `istio-system`. Quelle: [Ingress Operator: Konfiguration (Red Hat Docs, routeAdmission)](https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/networking/configuring-ingress),
 [openshift/enhancements: wildcard-admission-policy](https://github.com/openshift/enhancements/blob/master/enhancements/ingress/wildcard-admission-policy.md).
 
 ## Schritt 3: Konflikte mit bestehenden Routes anderer Teams
 
 `routeAdmission.namespaceOwnership` steht per Default auf `Strict`: nur ein Namespace darf
 einen gegebenen Hostnamen/eine Subdomain fuer sich beanspruchen. Fuer die Wildcard-Route aus
-Schritt 1 ist das gewollt - kein anderer Namespace kann euch nachtraeglich die Subdomain
+Schritt 1 ist das gewollt. Kein anderer Namespace kann euch nachtraeglich die Subdomain
 streitig machen. Zu beachten:
 
 - Bereits bestehende, **spezifischere** Routes anderer Apps unter derselben
@@ -78,7 +78,7 @@ streitig machen. Zu beachten:
   `VirtualService`-Objekte ersetzt werden. "Alles" bedeutet hier also praktisch: alles, wofuer
   es *keine* speziellere, konkurrierende Route mehr gibt.
 - Neue Apps sollten ab diesem Zeitpunkt **keine eigene `Route`** mehr anlegen, sondern nur noch
-  `Gateway`/`VirtualService`-Objekte - sonst entsteht wieder ein direkter, am Mesh
+  `Gateway`/`VirtualService`-Objekte. Sonst entsteht wieder ein direkter, am Mesh
   vorbeifuehrender Pfad.
 
 ## Schritt 4: NetworkPolicy-Falle bei restriktivem Default-Deny
@@ -86,8 +86,8 @@ streitig machen. Zu beachten:
 Der Router laeuft im Namespace `openshift-ingress`, ausserhalb des Mesh, und spricht den
 `istio-ingressgateway`-Service ganz normal ueber das Pod-Netzwerk (OVN-Kubernetes) an. Auf
 einem frischen Cluster ohne eigene `NetworkPolicy`-Objekte ist das automatisch erlaubt. Gilt im
-Cluster jedoch - wie im Architektur-Abschnitt der `readme.md` bereits fuer istiod/Sidecars
-vermerkt - ein restriktives Default-Deny, muss zusaetzlich Ingress von `openshift-ingress` auf
+Cluster jedoch, wie im Architektur-Abschnitt der `readme.md` bereits fuer istiod/Sidecars
+vermerkt, ein restriktives Default-Deny, muss zusaetzlich Ingress von `openshift-ingress` auf
 die Gateway-Ports (`8080`/`8443`, siehe `oc -n istio-system get svc istio-ingressgateway -o
 yaml`) explizit erlaubt werden, sonst liefert der Router bei Anfragen an die Wildcard-Route
 weiterhin `503`, obwohl Gateway-Pod und Route selbst gesund sind.
@@ -115,7 +115,7 @@ spec:
 
 Fuer `*.apps.<cluster-domain>` existiert die Wildcard-DNS-Zone in aller Regel bereits (jede
 andere Route im Cluster nutzt sie schon), ebenso die externe Erreichbarkeit des Routers
-(Firewall/LoadBalancer). Hier ist nichts usecase-Spezifisches zu tun - **ausser** ihr wollt eine
+(Firewall/LoadBalancer). Hier ist nichts usecase-Spezifisches zu tun, **ausser** ihr wollt eine
 eigene, zusaetzliche Domain statt `apps.<cluster-domain>` verwenden. Dann zusaetzlich noetig:
 
 - Eigener DNS-Wildcard-Eintrag (`*.euer-domain.tld` -> externe IP/LB des Routers).

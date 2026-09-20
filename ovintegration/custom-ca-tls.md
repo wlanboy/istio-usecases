@@ -1,7 +1,7 @@
-# Eigene Sub-CA fuer das externe TLS-Zertifikat - Terminierung am Envoy
+# Eigene Sub-CA fuer das externe TLS-Zertifikat: Terminierung am Envoy
 
 Die Basis-Installation (`readme.md`) terminiert TLS am OpenShift-Router (`22-route.yaml`,
-`termination: edge`) - der Router entschluesselt, der Weg Router -> `istio-ingressgateway` ist
+`termination: edge`). Der Router entschluesselt, der Weg Router -> `istio-ingressgateway` ist
 danach Klartext-HTTP. Dieses Dokument beschreibt die Alternative: TLS wird bis zu **Envoy**
 (dem Istio Ingress Gateway) durchgereicht und dort mit einem von der eigenen Sub-CA
 ausgestellten Zertifikat terminiert. Der Router macht dann nur noch **Passthrough**.
@@ -11,16 +11,16 @@ ausgestellten Zertifikat terminiert. Der Router macht dann nur noch **Passthroug
 - **Ein Zertifikat, eine Stelle, ein Secret.** Bei Router-Terminierung liegt das
   Zertifikatsmaterial entweder in jeder einzelnen `Route` oder im cluster-weiten
   IngressController-Default (siehe Alternative unten). Bei Envoy-Terminierung liegt es als
-  ganz normales Kubernetes-`Secret` in `istio-system` - Rotation ist ein Secret-Update, kein
+  ganz normales Kubernetes-`Secret` in `istio-system`. Rotation ist ein Secret-Update, kein
   Route-/IngressController-Edit, und laesst sich mit Standard-Kubernetes-Tooling (z. B.
   cert-manager) automatisieren.
 - **SNI-basiertes Routing direkt im Mesh.** Envoy kann pro Host/Server-Block unterschiedliche
   Zertifikate ausliefern (mehrere `tls`-Server-Bloecke im `Gateway`), ohne dass der Router davon
-  etwas mitbekommen muss - der Router leitet bei `passthrough` nur anhand der SNI weiter, ohne
+  etwas mitbekommen muss. Der Router leitet bei `passthrough` nur anhand der SNI weiter, ohne
   zu entschluesseln.
 - **mTLS/Client-Zertifikate moeglich.** Nur wenn Envoy selbst terminiert, kann Istio den TLS-
-  Handshake pruefen (`tls.mode: MUTUAL`, Client-Zertifikatsvalidierung gegen eine eigene Sub-CA)
-  - der Router kann das bei `edge`-Terminierung nicht.
+  Handshake pruefen (`tls.mode: MUTUAL`, Client-Zertifikatsvalidierung gegen eine eigene Sub-CA).
+  Der Router kann das bei `edge`-Terminierung nicht.
 - **Konsistente Sicherheitsgrenze.** Wenn "Envoy ist der TLS-Endpunkt" als Architekturprinzip
   gilt (z. B. weil der Router-Pfad als nicht vertrauenswuerdig genug gilt oder Compliance
   verlangt, dass TLS nur innerhalb des Mesh-verwalteten Zertifikatsstores endet), ist
@@ -29,19 +29,19 @@ ausgestellten Zertifikat terminiert. Der Router macht dann nur noch **Passthroug
 ## Voraussetzung: RBAC ist bereits vorhanden
 
 Envoy holt das Zertifikat zur Laufzeit per SDS (Secret Discovery Service) direkt aus der
-Kubernetes-API - dafuer braucht die ServiceAccount der Ingress-Gateway-Pods Lesezugriff auf
+Kubernetes-API. Dafuer braucht die ServiceAccount der Ingress-Gateway-Pods Lesezugriff auf
 `Secret`-Objekte in `istio-system`. Das ist **bereits Teil der Basis-Installation**: der
 `istio/gateway`-Helm-Chart legt per Default (`rbac.enabled: true`) automatisch eine `Role` +
 `RoleBinding` fuer die eigene ServiceAccount an (`get`/`watch`/`list` auf `secrets`, siehe
 `gateway/templates/role.yaml`), sobald `install-istio.sh` einmal durchgelaufen ist. Kein
-zusaetzlicher `oc adm policy`-Schritt noetig - anders als bei `anyuid`/`privileged` gibt es hier
+zusaetzlicher `oc adm policy`-Schritt noetig. Anders als bei `anyuid`/`privileged` gibt es hier
 keine SCC-Huerde, weil es sich um ganz normale RBAC-Rechte auf ein Kubernetes-Objekt handelt,
 nicht um Pod-Security.
 
 ## Schritt 1: TLS-Secret mit der Sub-CA-Kette anlegen
 
 ```bash
-# Reihenfolge in tls.crt: zuerst Leaf, danach Intermediate/Sub-CA(s) - kein separates
+# Reihenfolge in tls.crt: zuerst Leaf, danach Intermediate/Sub-CA(s), kein separates
 # caCertificate-Feld wie bei OpenShift-Routes, alles kommt in eine Datei
 cat leaf.crt sub-ca.crt > tls-chain.crt
 
@@ -50,7 +50,7 @@ oc create secret tls ovintegration-gateway-cert \
   -n istio-system
 ```
 
-Das Leaf-Zertifikat (`leaf.crt`) muss ein SAN tragen, das zum verwendeten Hostnamen passt -
+Das Leaf-Zertifikat (`leaf.crt`) muss ein SAN tragen, das zum verwendeten Hostnamen passt,
 z. B. `*.apps.<cluster-domain>` fuer eine gemeinsame Wildcard, oder `ovintegration-<namespace>.
 apps.<cluster-domain>` fuer einen einzelnen Demo-Namespace.
 
@@ -61,7 +61,7 @@ allen Demo-Namespaces (Begruendung siehe Schritt 4).
 
 Das bestehende `manifests/20-gateway.yaml` wird **pro Demo-Namespace** angelegt und hat nur
 einen HTTP-Server auf Port 80. Fuer TLS am Envoy legt man **ein zusaetzliches, zentrales**
-`Gateway`-Objekt in `istio-system` an (nicht pro Namespace - Begruendung siehe Schritt 4):
+`Gateway`-Objekt in `istio-system` an (nicht pro Namespace, Begruendung siehe Schritt 4):
 
 ```yaml
 # manifests/optional-gateway-tls.yaml (manuell anlegen, nicht Teil von install.sh)
@@ -86,7 +86,7 @@ spec:
 ```
 
 `credentialName` referenziert **immer** ein Secret im selben Namespace wie die
-Gateway-Workload selbst (`istio-system`) - unabhaengig davon, in welchem Namespace das
+Gateway-Workload selbst (`istio-system`), unabhaengig davon, in welchem Namespace das
 `Gateway`-Objekt liegt. Es gibt keine Cross-Namespace-Secret-Referenz per `credentialName`; der
 SDS-Server laeuft als Teil des Gateway-Pods und hat (siehe Voraussetzung oben) nur RBAC fuer
 sein eigenes Namespace.
@@ -140,22 +140,22 @@ spec:
 ```
 
 Unterschiede zur bisherigen `22-route.yaml`:
-- `port.targetPort: https` statt `http2` - der Router muss jetzt den TLS-Port (443) der
+- `port.targetPort: https` statt `http2`: der Router muss jetzt den TLS-Port (443) der
   Gateway-Service ansprechen, nicht den Klartext-Port 80 (die Service-Ports `http2`/`https`
   existieren bereits per Default im `gateway`-Chart, siehe `readme.md`-Troubleshooting).
-- `termination: passthrough` statt `edge` - der Router entschluesselt nicht mehr, sondern
+- `termination: passthrough` statt `edge`: der Router entschluesselt nicht mehr, sondern
   routet anhand der TLS-SNI direkt zur Service-IP durch. `certificate`/`key`/`caCertificate`
-  entfallen komplett aus der Route - das Zertifikat lebt jetzt ausschliesslich im Kubernetes-
+  entfallen komplett aus der Route. Das Zertifikat lebt jetzt ausschliesslich im Kubernetes-
   Secret aus Schritt 1.
 - `insecureEdgeTerminationPolicy: Redirect` funktioniert weiterhin: Port-80-Anfragen werden
-  weiterhin vom Router selbst (im Klartext, vor jeder TLS-Entscheidung) auf `https://` umgeleitet
-  - das betrifft nur den initialen Redirect, nicht den eigentlichen TLS-Traffic.
+  weiterhin vom Router selbst (im Klartext, vor jeder TLS-Entscheidung) auf `https://` umgeleitet.
+  Das betrifft nur den initialen Redirect, nicht den eigentlichen TLS-Traffic.
 
 **Warum ein zentrales Gateway/Secret statt einem pro Demo-Namespace?** Passthrough-Routing
 durch den Router UND SIMPLE-TLS-Terminierung durch Envoy laufen beide ueber SNI/Host-Matching.
 Da jedes `install.sh <namespace>` bisher ein eigenes `Gateway` mit `hosts: ["*"]` anlegt, wuerde
 ein zusaetzlicher TLS-Server pro Namespace mehrere `Gateway`-Objekte erzeugen, die alle
-`hosts: ["*"]` auf denselben Envoy-Pods und denselben Port 443 beanspruchen - uneindeutig, wenn
+`hosts: ["*"]` auf denselben Envoy-Pods und denselben Port 443 beanspruchen. Uneindeutig, wenn
 mehrere Demo-Namespaces gleichzeitig installiert sind (die `readme.md` beschreibt genau dieses
 Mehr-Namespace-Szenario als unterstuetzt). Ein zentrales `Gateway` mit einem Wildcard-Zertifikat
 in `istio-system`, an das alle `VirtualService`-Objekte der Demo-Namespaces gebunden werden,
@@ -176,7 +176,7 @@ curl -v --cacert root-ca.crt "https://${ROUTE_HOST}/"
 ```
 
 `openssl s_client` zeigt das von Envoy praesentierte Zertifikat (Issuer sollte die eigene
-Sub-CA sein) - damit laesst sich unterscheiden, ob wirklich Envoy terminiert (Issuer = eigene
+Sub-CA sein). Damit laesst sich unterscheiden, ob wirklich Envoy terminiert (Issuer = eigene
 Sub-CA) oder der Request unbemerkt doch am Router landet (Issuer = OpenShift-Default-CA).
 
 ## Troubleshooting
