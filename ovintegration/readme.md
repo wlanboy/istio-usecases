@@ -19,7 +19,10 @@ den aktuellen Chart-Quellcode (u. a. Release 1.31.0) gibt es dort **keine**
 `Error: unknown profile "openshift"` und bricht die Installation ab. Der tatsaechlich
 existierende, wirksame Wert heisst **`platform=openshift`** (laedt
 `files/profile-platform-openshift.yaml` in jedem Chart). Alle Skripte hier verwenden deshalb
-`--set platform=openshift`.
+`--set platform=openshift`. (Stand September 2026 ist `install-OpenShift.md` in
+`istio/istio@master` selbst noch inkonsistent - es zeigt weiterhin `--set profile=openshift`
+gegen lokale Chart-Pfade, obwohl `files/profile-openshift.yaml` im selben Chart nicht mehr
+existiert.)
 
 `platform=openshift` setzt u. a.:
 
@@ -44,7 +47,7 @@ OpenShift Router (HAProxy)  --Route "ovintegration-<namespace>" in istio-system-
 Service istio-ingressgateway (ClusterIP, Namespace istio-system)
     |
     v
-Istio Ingress Gateway (Envoy) --- Gateway "ovintegration-gateway" (hosts: "*")
+Istio Ingress Gateway (Envoy, Pod-Label istio=ingressgateway) --- Gateway "ovintegration-gateway" (hosts: "*")
     |
     | VirtualService "ovintegration-nginx" routet auf Service nginx.<namespace>
     v
@@ -65,6 +68,15 @@ Node-Ebene (einmalig pro Cluster):
   (`istio-ingressgateway`), also in `istio-system` - unabhaengig davon, in welchem Namespace
   der Demo-Workload (`nginx`) laeuft. Mehrere Demo-Namespaces teilen sich denselben Gateway/
   Router und unterscheiden sich nur durch eigene `Route`/`Gateway`/`VirtualService`-Objekte.
+- Das Istio-`Gateway`-Objekt selektiert die Ingress-Gateway-Pods ueber das Label `istio:
+  ingressgateway` (**nicht** `istio: istio-ingressgateway`). Der `istio/gateway`-Helm-Chart
+  leitet dieses Label aus dem Release-Namen ab und entfernt dabei automatisch das Praefix
+  `istio-` (`gateway.selectorLabels` in `_helpers.tpl`: `istio: {{ ... | trimPrefix "istio-"
+  }}`) - bei `helm install istio-ingressgateway istio/gateway` (siehe `install-istio.sh`) sind
+  die tatsaechlichen Pod-Labels also `app: istio-ingressgateway`, `istio: ingressgateway`. Ein
+  falscher Selector-Wert `istio: istio-ingressgateway` matcht keinen Pod und faellt nicht beim
+  Installieren auf, sondern erst beim Testen (`run.sh` liefert dann 503 vom Router, siehe
+  Troubleshooting).
 - Der Ingress-Gateway-Service laeuft hier bewusst als `ClusterIP` (nicht `LoadBalancer`):
   die externe Erreichbarkeit kommt bereits vom OpenShift-Router/der Route, ein zusaetzlicher
   Cloud-Loadbalancer ist nicht noetig - relevant gerade bei On-Prem-/Bare-Metal-OpenShift auf
@@ -125,13 +137,20 @@ helm upgrade --install istio-ingressgateway istio/gateway -n istio-system \
   --set platform=openshift --set service.type=ClusterIP --wait
 ```
 
-**Warum `anyuid`-SCC?** Der Istio-Sidecar (`istio-proxy`) laeuft fest mit `runAsUser: 1337`
-(hartcodiert im Sidecar-Injection-Template, unabhaengig von `platform=openshift`). OpenShifts
-Standard-SCC `restricted-v2` erlaubt aber nur eine dem Projekt automatisch zugewiesene
-UID-Range (`MustRunAsRange`), nicht eine feste UID wie 1337. Ohne `anyuid`-SCC fuer die
-ServiceAccounts in `istio-system` (Control Plane, Gateway) und im jeweiligen Mesh-Namespace
-(siehe `install.sh` unten) werden die Pods mit `unable to validate against any security
-context constraint` abgelehnt.
+**Warum `anyuid`-SCC?** Der Sidecar-Injector faellt nur dann auf die feste UID `1337` zurueck,
+wenn er sie nicht anders bestimmen kann (`ProxyUID | default "1337"` im
+Sidecar-Injection-Template). Seit Istio 1.20 liest `GetProxyIDs()` im Injection-Webhook
+zunaechst die OpenShift-Namespace-Annotation `openshift.io/sa.scc.uid-range` (die jedes normal
+angelegte Project/Namespace automatisch bekommt) und verwendet das Maximum dieser Range als
+`runAsUser`/`runAsGroup` - dadurch bleibt der Sidecar i. d. R. bereits innerhalb der von
+`restricted-v2` erlaubten `MustRunAsRange`, ohne `anyuid` ("Improved usage on OpenShift
+clusters by removing the need to grant the `anyuid` SCC privilege", Istio-1.20-Release-Notes).
+`anyuid` ist hier trotzdem als Sicherheitsnetz drin: die automatische Range-Erkennung greift
+nur, wenn der Namespace tatsaechlich diese Standard-Annotation traegt (z. B. nicht bei
+Namespaces mit abweichender Custom-SCC, siehe
+[istio/istio#61791](https://github.com/istio/istio/issues/61791)); mit `anyuid` klappt es
+unabhaengig davon. Ohne eine der beiden Varianten werden Pods mit `unable to validate against
+any security context constraint` abgelehnt.
 
 **Warum `privileged`-SCC nur fuer `istio-cni`?** Nur der `istio-cni-node`-DaemonSet braucht
 echte Node-Rechte (fremde Pod-Netzwerk-Namespaces umkonfigurieren). Alle anderen
@@ -209,6 +228,19 @@ Port. Pruefen mit:
 oc -n istio-system get pods -l app=istio-ingressgateway
 oc -n istio-system get route ovintegration-<namespace> -o yaml
 ```
+
+**`curl` liefert `404`/`503` von Envoy selbst (Status-Header zeigt bereits `server:
+istio-envoy`), obwohl Pods und Route laut `oc get` in Ordnung sind.** Das `Gateway`-Objekt
+selektiert keine Pods, weil `spec.selector` nicht mit den tatsaechlichen Pod-Labels des
+Ingress-Gateway-Deployments uebereinstimmt (haeufigste Ursache: falscher Wert wie `istio:
+istio-ingressgateway` statt des vom Helm-Chart aus dem Release-Namen abgeleiteten `istio:
+ingressgateway`, siehe Architektur-Abschnitt oben). Pruefen mit:
+```bash
+oc -n istio-system get pods -l istio=ingressgateway --show-labels
+oc -n <namespace> get gateway ovintegration-gateway -o jsonpath='{.spec.selector}'
+```
+Stimmen die Labels aus der ersten Zeile nicht mit dem Selector aus der zweiten ueberein, ist
+das die Ursache - `20-gateway.yaml` entsprechend anpassen.
 
 **`curl` liefert HTTP 200, aber ohne `server: istio-envoy`.** Die Route hat direkt auf ein
 Ziel geroutet, das nicht der Ingress-Gateway ist (z. B. falscher Service-Name in
