@@ -99,7 +99,7 @@ Default-Allow-Verhalten dem gestellten Ziel widerspricht.
 Obwohl eine Seite OpenShift ist, verwendet dieses Dokument bewusst
 **Open-Source-Istio** und den Upstream-Controller
 [openshift-service-mesh/federation](https://github.com/openshift-service-mesh/federation)
-(trotz des Namens auf jedem Istio-Mesh lauffähig, nicht nur auf OpenShift) - dieselbe
+(trotz des Namens auf jedem Istio-Mesh lauffähig, nicht nur auf OpenShift). Dieselbe
 Entscheidung wie in [`ovintegration/readme.md`](ovintegration/readme.md). Red Hats
 Produkt "OpenShift Service Mesh" bietet dasselbe Federation-Prinzip nativ und mit
 Vendor-Support als eigenes Feature an
@@ -151,8 +151,7 @@ Praktikable Lösung für den On-Prem-Fall: ein WireGuard-Tunnel, der ausgehend v
 OpenShift-Standort zu einer kleinen Compute-Engine-VM mit öffentlicher IP in der
 GCP-VPC aufgebaut wird. Da die Verbindung von der OpenShift-Seite initiiert wird,
 ist keine eingehende Portfreigabe an der lokalen Firewall nötig, die VM in GCP
-muss lediglich den WireGuard-UDP-Port von außen annehmen
-([Bridging Cloud and On-Premises: WireGuard VPN for Unified Kubernetes Networking](https://patel-aum.medium.com/bridging-cloud-and-on-premises-setting-up-wireguard-vpn-for-unified-kubernetes-networking-400d6a035bed)).
+muss lediglich den WireGuard-UDP-Port von außen annehmen.
 Sobald On-Prem eine echte statische IP hat, ist Cloud VPN die vom offiziellen
 GKE-Hybrid-Leitfaden empfohlene Variante, inklusive Cloud-Router-Routenankündigung
 der beteiligten Subnetze in beide Richtungen
