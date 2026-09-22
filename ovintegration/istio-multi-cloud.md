@@ -1,35 +1,39 @@
-# Multi-Cloud Mesh: lokalen Cluster mit Google Cloud (GKE) verbinden
+# Multi-Cloud Mesh: OpenShift-Cluster mit Google Cloud (GKE) verbinden
 
 Dieses Dokument beschreibt, wie zwei komplett getrennte Kubernetes-Cluster
-verbunden werden: ein lokaler Cluster (z. B. zuhause/on-prem, hinter einem
-gewöhnlichen Internet-Router) und ein GKE-Cluster in der Google Cloud. Ziel ist,
-dass gezielt ausgewählte Dienste wechselseitig erreichbar sind, während alle
-übrigen internen Dienste strikt isoliert bleiben. Nichts wird automatisch
-sichtbar, nur was explizit freigegeben wurde. Diese Anforderung bestimmt die
-Architekturentscheidung in diesem Dokument, siehe
+verbunden werden: ein OpenShift-Cluster mit **Open-Source-Istio** (siehe
+[`ovintegration/readme.md`](ovintegration/readme.md), **nicht** der
+Red-Hat-Operator "OpenShift Service Mesh") und ein GKE-Cluster in der Google
+Cloud. Ziel ist, dass gezielt ausgewählte Dienste wechselseitig erreichbar sind,
+während alle übrigen internen Dienste strikt isoliert bleiben. Nichts wird
+automatisch sichtbar, nur was explizit freigegeben wurde. Diese Anforderung
+bestimmt die Architekturentscheidung in diesem Dokument, siehe
 [Topologie-Wahl](#topologie-wahl-multi-primary-primary-remote-oder-mesh-federation).
 
 Es geht bewusst nicht um Befehle (`kubectl`/`istioctl`), sondern um
 Architekturentscheidungen, Voraussetzungen und die Reihenfolge der Tätigkeiten vor
-und während der eigentlichen Istio-Konfiguration. Die konkrete
-Kommando-Ausführung unterscheidet sich je nach Istio-Version und
-Federation-Controller und ist in den verlinkten Quellen dokumentiert.
+und während der eigentlichen Istio-Konfiguration. Die konkreten Kommandos für
+genau diese Kombination (OpenShift + GKE, Open-Source-Istio, Mesh Federation)
+stehen in [`ovintegration/federation.md`](ovintegration/federation.md); dieses
+Dokument liefert dafür die *Warum*-Herleitung.
 
 ## Architekturentscheidung: warum hier nur "Multi-Network" infrage kommt
 
 Istio unterscheidet bei Mesh-übergreifenden Setups vier voneinander unabhängige
 Achsen: Anzahl Cluster, Anzahl Netzwerke, Anzahl Kontrollebenen und Anzahl Meshes
 ([Deployment Models](https://istio.io/latest/docs/ops/deployment/deployment-models/)).
-Für den Fall "lokaler Cluster + GKE" ist die Netzwerk-Frage bereits entschieden:
+Für den Fall "OpenShift + GKE" ist die Netzwerk-Frage bereits entschieden:
 
 - Single-Network würde direkte Pod-zu-Pod-Erreichbarkeit über beide Cluster hinweg
   voraussetzen, also ein durchgeroutetes, flaches L3-Netz mit garantiert nicht
   überlappenden Pod-/Service-CIDRs
   ([Deployment Models](https://istio.io/latest/docs/ops/deployment/deployment-models/)).
-  Das ist zwischen einem Heimnetz und einer GCP-VPC praktisch nie gegeben. Router
-  im Heimnetz vergeben private RFC1918-Adressen ohne Rücksicht auf GCP, und die
-  Kubernetes-Distribution zuhause (kind/minikube/k3s/microk8s) wählt ihre
-  Pod-/Service-CIDRs unabhängig von der GKE-VPC.
+  Das ist zwischen einem selbst betriebenen OpenShift-Cluster (On-Prem, eigenes
+  Rechenzentrum oder eine andere Cloud) und einer GCP-VPC praktisch nie gegeben.
+  OpenShift wählt seine Pod-/Service-CIDRs beim Cluster-Setup unabhängig von der
+  GKE-VPC, und OVN-Kubernetes als Standard-SDN (siehe
+  [`ovintegration/readme.md`](ovintegration/readme.md)) routet ohnehin nicht über
+  Cluster-Grenzen hinweg.
 - Multi-Network akzeptiert genau das: überlappende IP-Bereiche, kein direkter
   Pod-Zugriff über Cluster-Grenzen hinweg, stattdessen vermittelt ein dediziertes
   Gateway pro Cluster den Cross-Cluster-Verkehr
@@ -46,11 +50,11 @@ oder zwei getrennte, die nur punktuell miteinander sprechen:
 
 | | **Multi-Primary** | **Primary-Remote** | **Mesh Federation** |
 |---|---|---|---|
-| Kontrollebene | je Cluster ein eigener istiod, ein gemeinsames Mesh | ein istiod (in GCP), lokaler Cluster hat keine eigene Kontrollebene | je Cluster ein eigener istiod, zwei getrennte Meshes |
+| Kontrollebene | je Cluster ein eigener istiod, ein gemeinsames Mesh | ein istiod (in GCP), OpenShift-Cluster hat keine eigene Kontrollebene | je Cluster ein eigener istiod, zwei getrennte Meshes |
 | Trust-Domain / Root-CA | gemeinsam (ein Root, zwei Intermediates) | gemeinsam (eine CA reicht) | frei wählbar: gemeinsamer Root oder getrennte Roots je Mesh |
 | Service Discovery | automatisch über beide Cluster, jeder Service mit gleichem Namespace/Namen wird standardmäßig clusterübergreifend zusammengeführt | automatisch über beide Cluster | nicht automatisch, nur Services mit expliziter Export-Regel sind für die Gegenseite überhaupt sichtbar |
-| API-Server-Zugriff nötig | beidseitig: beide Kontrollebenen müssen den jeweils anderen API-Server erreichen und dürfen dort per Remote Secret Objekte auflisten | einseitig: nur GCP muss den lokalen API-Server erreichen | keiner, die Federation-Controller sprechen ausschließlich per gRPC über das Federation-Gateway miteinander |
-| Ausfallverhalten | jeder Cluster bleibt bei Verbindungsverlust für sich funktionsfähig | lokaler Cluster verliert bei Verbindungsverlust zu GCP die Konfigurationsversorgung | jeder Cluster bleibt vollständig funktionsfähig, auch administrativ komplett eigenständig |
+| API-Server-Zugriff nötig | beidseitig: beide Kontrollebenen müssen den jeweils anderen API-Server erreichen und dürfen dort per Remote Secret Objekte auflisten | einseitig: nur GCP muss den OpenShift-API-Server erreichen | keiner, die Federation-Controller sprechen ausschließlich per gRPC über das Federation-Gateway miteinander |
+| Ausfallverhalten | jeder Cluster bleibt bei Verbindungsverlust für sich funktionsfähig | OpenShift-Cluster verliert bei Verbindungsverlust zu GCP die Konfigurationsversorgung | jeder Cluster bleibt vollständig funktionsfähig, auch administrativ komplett eigenständig |
 | Referenz | [Install Multi-Primary on different networks](https://istio.io/latest/docs/setup/install/multicluster/multi-primary_multi-network/) | [Install Primary-Remote on different networks](https://istio.io/latest/docs/setup/install/multicluster/primary-remote_multi-network/) | [openshift-service-mesh/federation](https://github.com/openshift-service-mesh/federation), [Deployment Models](https://istio.io/latest/docs/ops/deployment/deployment-models/) |
 
 ### Warum das Service-Discovery-Verhalten hier den Ausschlag gibt
@@ -90,21 +94,25 @@ jemals mehr als die bewusst freigegebenen Dienste über die Cluster-Grenze sicht
 werden, ohne dabei auf zentrale, leicht zu vergessende `discoverySelectors`-Pflege
 angewiesen zu sein. Multi-Primary und Primary-Remote bleiben oben zum Vergleich
 stehen, sind für dieses Szenario aber bewusst nicht die empfohlene Wahl, weil ihr
-Default-Allow-Verhalten dem gestellten Ziel widerspricht. Falls das Team der
-OpenShift-Welt näher steht als reinem Upstream Istio: Red Hats OpenShift Service
-Mesh bietet dasselbe Prinzip als nativ unterstütztes Feature
+Default-Allow-Verhalten dem gestellten Ziel widerspricht.
+
+Obwohl eine Seite OpenShift ist, verwendet dieses Dokument bewusst
+**Open-Source-Istio** und den Upstream-Controller
+[openshift-service-mesh/federation](https://github.com/openshift-service-mesh/federation)
+(trotz des Namens auf jedem Istio-Mesh lauffähig, nicht nur auf OpenShift) - dieselbe
+Entscheidung wie in [`ovintegration/readme.md`](ovintegration/readme.md). Red Hats
+Produkt "OpenShift Service Mesh" bietet dasselbe Federation-Prinzip nativ und mit
+Vendor-Support als eigenes Feature an
 (`ServiceMeshPeer`/`ExportedServiceMeshSet`/`ImportedServiceSet`,
-[Introducing OpenShift Service Mesh 2.1 - Federation Has Arrived](https://www.redhat.com/en/blog/introducing-openshift-service-mesh-2.1-federation-has-arrived)).
-Für dieses Dokument (GKE und lokaler Nicht-OpenShift-Cluster) ist aber der
-Upstream-Controller [openshift-service-mesh/federation](https://github.com/openshift-service-mesh/federation)
-relevant, der trotz des Namens auf jedem Istio-Mesh läuft, nicht nur auf OpenShift.
+[Introducing OpenShift Service Mesh 2.1 - Federation Has Arrived](https://www.redhat.com/en/blog/introducing-openshift-service-mesh-2.1-federation-has-arrived)) -
+eine gültige Alternative, falls das Team Vendor-Support dem Betrieb eines
+Community-Projekts vorzieht, aber nicht der hier gewählte Weg.
 
-## Das eigentliche Problem: Netzwerk-Konnektivität zwischen Heimnetz und GCP
+## Das eigentliche Problem: Netzwerk-Konnektivität zwischen OpenShift und GCP
 
-Das ist der Teil, der bei "lokal + Cloud" (anders als bei zwei Cloud-Clustern)
-tatsächlich schwierig ist, und er muss vor jeder Istio-Konfiguration gelöst sein.
-Mit Mesh Federation reduziert sich das gegenüber Multi-Primary/Primary-Remote auf
-genau eine Sache:
+Das ist der Teil, der je nach OpenShift-Standort unterschiedlich schwierig ist,
+und er muss vor jeder Istio-Konfiguration gelöst sein. Mit Mesh Federation
+reduziert sich das gegenüber Multi-Primary/Primary-Remote auf genau eine Sache:
 
 - Federation-Gateway. Der Datenverkehr der tatsächlich exportierten Services
   läuft im TLS-`AUTO_PASSTHROUGH`-Modus über dieses Gateway (SNI-Routing ohne
@@ -122,38 +130,46 @@ Gegenseite keinen Weg, beliebige Objekte der eigenen Kubernetes-API aufzulisten.
 Die Angriffsfläche bleibt auf die tatsächlich exportierten Service-Adressen
 begrenzt.
 
-Trotzdem bleibt eine private Netzwerkverbindung sinnvoll, als zusätzliche
-Verteidigungsebene. Ein typischer Internet-Anschluss zuhause hat keine feste
-öffentliche IP, oft sogar Carrier-Grade-NAT, und das Federation-Gateway sollte
-nicht unnötig dem offenen Internet ausgesetzt werden, selbst wenn Export-Allowlist
-und mTLS es bereits absichern. Ein klassisches Site-to-Site-VPN wie Google Cloud
-VPN (auch HA VPN) setzt aber eine erreichbare, in der Regel statische öffentliche
-IP auf der Gegenstelle voraus
-([GKE with VPN – Networking options](https://sreeninet.wordpress.com/2019/08/11/gke-with-vpn-networking-options/)),
-genau das ist im Heimnetz meist nicht gegeben.
+Wie schwer die verbleibende Netzwerkfrage wiegt, hängt davon ab, wo OpenShift
+läuft:
 
-Praktikable Lösung: ein WireGuard-Tunnel, der ausgehend vom Heimnetz zu einer
-kleinen Compute-Engine-VM mit öffentlicher IP in der GCP-VPC aufgebaut wird. Da
-die Verbindung vom lokalen Cluster initiiert wird, ist keine eingehende
-Portfreigabe am Heimrouter nötig, die VM in GCP muss lediglich den
-WireGuard-UDP-Port von außen annehmen
+- **Cloud-gehostetes OpenShift** (z. B. auf einer VM bei einem Cloud-Provider,
+  mit öffentlich erreichbarem Router/Route oder LoadBalancer davor) - der
+  typische Fall. Beide Seiten sind bereits öffentlich erreichbar, es genügt eine
+  eng gefasste Firewall-Regel (Quell-Adressbereich der Gegenseite statt
+  `0.0.0.0/0`) plus mTLS zwischen den Federation-Gateways. Kein zusätzlicher
+  Tunnel nötig.
+- **On-Prem/Bare-Metal-OpenShift ohne öffentlich erreichbaren Router** - dieselbe
+  Situation wie bei einem Heimnetz-Anschluss: keine feste öffentliche IP, oft
+  Carrier-Grade-NAT oder eine Firewall ohne Portfreigabe nach außen. Ein
+  klassisches Site-to-Site-VPN wie Google Cloud VPN (auch HA VPN) setzt eine
+  erreichbare, in der Regel statische öffentliche IP auf der Gegenstelle voraus
+  ([GKE with VPN – Networking options](https://sreeninet.wordpress.com/2019/08/11/gke-with-vpn-networking-options/)),
+  genau das ist On-Prem oft nicht gegeben.
+
+Praktikable Lösung für den On-Prem-Fall: ein WireGuard-Tunnel, der ausgehend vom
+OpenShift-Standort zu einer kleinen Compute-Engine-VM mit öffentlicher IP in der
+GCP-VPC aufgebaut wird. Da die Verbindung von der OpenShift-Seite initiiert wird,
+ist keine eingehende Portfreigabe an der lokalen Firewall nötig, die VM in GCP
+muss lediglich den WireGuard-UDP-Port von außen annehmen
 ([Bridging Cloud and On-Premises: WireGuard VPN for Unified Kubernetes Networking](https://patel-aum.medium.com/bridging-cloud-and-on-premises-setting-up-wireguard-vpn-for-unified-kubernetes-networking-400d6a035bed)).
-Für produktivere Umgebungen mit echter statischer IP auf der lokalen Seite ist
-Cloud VPN die vom offiziellen GKE-Hybrid-Leitfaden empfohlene Variante, inklusive
-Cloud-Router-Routenankündigung der beteiligten Subnetze in beide Richtungen
+Sobald On-Prem eine echte statische IP hat, ist Cloud VPN die vom offiziellen
+GKE-Hybrid-Leitfaden empfohlene Variante, inklusive Cloud-Router-Routenankündigung
+der beteiligten Subnetze in beide Richtungen
 ([Configure Hybrid Mesh – all GKE clusters must be in a VPC](https://cloud.google.com/service-mesh/v1.24/docs/operate-and-maintain/hybrid-mesh?hl=en)).
 
 ## Schritt für Schritt
 
-### Schritt 1: Netzwerkbrücke aufbauen
+### Schritt 1: Netzwerkbrücke aufbauen (nur On-Prem)
 
-Vor jeder Istio-Ressource steht der VPN-Tunnel zwischen Heimnetz und GCP-VPC
-(WireGuard-VM oder Cloud VPN, siehe oben). Anschließend Routing einrichten, damit
-die spätere Federation-Gateway-Adresse der Gegenseite über den Tunnel erreichbar
-ist. Ein Zugriffspfad zum Kubernetes-API-Server der Gegenseite ist für die
-Federation selbst nicht nötig (siehe oben). Falls für den eigenen Betrieb
-trotzdem `kubectl`-Zugriff von außen gewünscht ist, ist das eine separate,
-unabhängige Entscheidung.
+Nur relevant, falls OpenShift On-Prem ohne öffentlich erreichbaren Router läuft
+(siehe oben). Dann steht vor jeder Istio-Ressource der VPN-Tunnel zwischen
+OpenShift-Standort und GCP-VPC (WireGuard-VM oder Cloud VPN). Anschließend
+Routing einrichten, damit die spätere Federation-Gateway-Adresse der Gegenseite
+über den Tunnel erreichbar ist. Bei cloud-gehostetem OpenShift entfällt dieser
+Schritt, hier reicht die Firewall-Regel aus Schritt 5. Ein Zugriffspfad zum
+Kubernetes-API-Server der Gegenseite ist für die Federation selbst in beiden
+Fällen nicht nötig (siehe oben).
 
 ### Schritt 2: Mesh-Identität pro Seite festlegen
 
@@ -204,15 +220,20 @@ Services (Schritt 7).
 In GCP läuft das Gateway hinter einem `Service` vom Typ `LoadBalancer`.
 Empfehlenswert ist eine reservierte, statische externe IP-Adresse
 ([Static IP addresses für Ingress-Gateways](https://docs.cloud.google.com/apigee/docs/hybrid/v1.1/static-ip)),
-dazu eine Firewall-Regel, beschränkt auf das Tunnel-Subnetz des VPN aus Schritt 1
-statt `0.0.0.0/0`. Für die Health-Checks des Load Balancers zusätzlich Zugriff
-aus den GCP-eigenen Health-Check-Bereichen `35.191.0.0/16` und `130.211.0.0/22`
-erlauben
+dazu eine Firewall-Regel, beschränkt auf den erreichbaren Adressbereich der
+OpenShift-Seite (Tunnel-Subnetz bei On-Prem, sonst deren öffentlicher
+Adressbereich) statt `0.0.0.0/0`. Für die Health-Checks des Load Balancers
+zusätzlich Zugriff aus den GCP-eigenen Health-Check-Bereichen `35.191.0.0/16`
+und `130.211.0.0/22` erlauben
 ([LoadBalancer Service parameters: Health-Check-Firewallregel](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/service-load-balancer-parameters)).
 
-Im lokalen Cluster wird das Gateway per `NodePort` (oder MetalLB, falls
-vorhanden) exponiert und ist ausschließlich über die private VPN-Tunnel-Adresse
-erreichbar, niemals über eine öffentliche Portfreigabe am Heimrouter.
+Auf der OpenShift-Seite übernimmt bevorzugt eine **OpenShift Route**
+(TLS-Passthrough, `ingressType: openshift-router` beim Federation-Controller) die
+Exposition - kein zusätzlicher `LoadBalancer`-Service nötig, siehe
+[`ovintegration/federation.md`](ovintegration/federation.md) für die konkreten
+Manifeste. Ist die Route nicht öffentlich erreichbar (On-Prem-Fall), wird sie
+stattdessen ausschließlich über die private VPN-Tunnel-Adresse aus Schritt 1
+angesprochen, niemals über eine zusätzliche Portfreigabe nach außen.
 
 ### Schritt 6: Peer-Beziehung konfigurieren
 
@@ -293,8 +314,9 @@ der anderen Seite auftaucht, solange dort kein passender Import existiert.
 - mTLS mesh-weit auf `STRICT` setzen (`PeerAuthentication`), damit
   Federation-Verkehr nicht versehentlich unverschlüsselt läuft.
 - Firewall-Regeln so eng wie möglich fassen: Quellbereich immer das
-  VPN-Tunnel-Subnetz, nie das offene Internet. Auch wenn Export-Allowlist und
-  mTLS das Federation-Gateway bereits absichern, ist die Netzwerkgrenze eine
+  VPN-Tunnel-Subnetz (On-Prem) bzw. der bekannte Adressbereich der Gegenseite
+  (cloud-gehostet), nie das offene Internet. Auch wenn Export-Allowlist und mTLS
+  das Federation-Gateway bereits absichern, ist die Netzwerkgrenze eine
   zusätzliche, unabhängige Verteidigungsebene.
 - Die Export-Liste aus Schritt 7 wie eine sicherheitsrelevante Konfiguration
   behandeln. Hier wird entschieden, was intern bleibt und was cloud-erreichbar
@@ -303,11 +325,12 @@ der anderen Seite auftaucht, solange dort kein passender Import existiert.
   lockerer als bei Multi-Primary/Primary-Remote (kein gemeinsames xDS zwischen
   den Kontrollebenen), aber der Federation-Controller selbst hat eigene
   Versionsabhängigkeiten zur jeweiligen Istio-Version.
-- VPN-Tunnel überwachen. Fällt er aus, sind ausschließlich die explizit
-  federierten Services betroffen, beide Meshes bleiben davon unabhängig jederzeit
-  vollständig funktionsfähig. Das ist der Vorteil gegenüber Primary-Remote. Bei
-  dynamischer öffentlicher IP der GCP-VM zusätzlich einen stabilen DNS-Namen
-  oder eine reservierte statische IP für den WireGuard-Endpunkt verwenden.
+- VPN-Tunnel überwachen, falls einer im Einsatz ist (On-Prem-Fall). Fällt er aus,
+  sind ausschließlich die explizit federierten Services betroffen, beide Meshes
+  bleiben davon unabhängig jederzeit vollständig funktionsfähig. Das ist der
+  Vorteil gegenüber Primary-Remote. Bei dynamischer öffentlicher IP der GCP-VM
+  zusätzlich einen stabilen DNS-Namen oder eine reservierte statische IP für den
+  WireGuard-Endpunkt verwenden.
 - Rotationsverfahren dokumentieren: bei gemeinsamer Root-CA (Schritt 3, Option 1)
   betrifft eine Rotation koordiniert beide Seiten, bei getrennten CAs (Option 2)
   ist die Rotation je Seite unabhängig, erfordert aber einen erneuten
@@ -317,11 +340,11 @@ der anderen Seite auftaucht, solange dort kein passender Import existiert.
 
 | # | Tätigkeit | Betrifft |
 |---|---|---|
-| 1 | VPN-Tunnel + Routing zum künftigen Federation-Gateway | Netzwerk |
+| 1 | VPN-Tunnel + Routing zum künftigen Federation-Gateway (nur On-Prem ohne öffentliche Erreichbarkeit) | Netzwerk |
 | 2 | Mesh-Identität je Seite (unabhängig), Peer-Namen festlegen | beide Cluster |
 | 3 | Vertrauensbasis entscheiden: gemeinsame Root-CA oder getrennt + Trust-Bundle | beide Cluster |
 | 4 | Kontrollebenen unabhängig installieren | beide Cluster |
-| 5 | Federation-Gateway ausrollen, statische IP + eng gefasste Firewall-Regel | beide Cluster |
+| 5 | Federation-Gateway ausrollen, statische IP/Route + eng gefasste Firewall-Regel | beide Cluster |
 | 6 | Peer-Beziehung konfigurieren | beide Cluster |
 | 7 | Export-Regeln definieren (Governance-Schicht) | exportierende Seite |
 | 8 | Import-Regeln definieren | konsumierende Seite |
