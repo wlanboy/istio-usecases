@@ -99,7 +99,7 @@ unabhaengig vom SDN und betrifft jede Mesh-Installation.
 Anders als bei OpenShift (dort ist SCC-Handling fuer alle Cluster gleich)
 unterscheidet sich die GKE-Situation stark nach Cluster-Modus:
 
-| | **GKE Standard** | **GKE Autopilot** |
+| x | **GKE Standard** | **GKE Autopilot** |
 |---|---|---|
 | Privilegierte Pods (`istio-cni-node`) | funktioniert wie auf jedem gewoehnlichen Kubernetes: Node-Pools sind normale VMs, kein plattformseitiges Verbot privilegierter DaemonSets, solange kein eigenes Pod-Security-Admission/Gatekeeper-Regelwerk das einschraenkt. | von Google zentral eingeschraenkt: Autopilot erzwingt per Default ein Regelwerk oberhalb der Pod-Security-Standard-Stufe *Baseline* (mit Teilen von *Restricted*); `hostPath`-Volumes im Schreibmodus (die `istio-cni`-Install-Container braucht) sind darin nicht erlaubt. Freigeschaltet werden privilegierte Workloads nur ueber Googles eigenen **AllowlistSynchronizer/WorkloadAllowlist**-Mechanismus (`--autopilot-privileged-admission`), nicht ueber ein Namespace-Label wie bei GKE Standard oder eine SCC wie bei OpenShift. Offenes Upstream-`istio-cni` steht dort nicht automatisch auf der Allowlist. |
 | Praktische Konsequenz | `install-istio.sh`-Analogon (siehe unten) laeuft im Prinzip unveraendert. | Selbstverwaltetes Open-Source-`istio-cni` ist auf Autopilot nicht ohne Weiteres lauffaehig (siehe u. a. [istio/istio#37150](https://github.com/istio/istio/issues/37150)). Google empfiehlt fuer Autopilot stattdessen **Cloud Service Mesh** (Googles verwaltetes Mesh-Angebot), das Sidecare ueber einen eigenen, bereits freigeschalteten Mechanismus injiziert, **ohne** dem App-Pod selbst erhoehte Rechte zu geben. |
