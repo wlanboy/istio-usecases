@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+from typing import NoReturn
 
 ERROR = "ERROR"
 WARN = "WARN"
@@ -37,6 +38,12 @@ KIND_SHORT = {"VirtualService": "vs", "DestinationRule": "dr"}
 
 
 # --- Laden ---------------------------------------------------------------
+
+def die(message) -> NoReturn:
+    """Beendet mit Exit-Code 2, damit Ladefehler nicht wie ERROR-Befunde (1) aussehen."""
+    print(message, file=sys.stderr)
+    sys.exit(2)
+
 
 def run(cmd):
     try:
@@ -56,7 +63,7 @@ def load_from_cluster(namespace, context):
             "-n", namespace, "-o", "json"]
     out, err = run(cmd)
     if out is None:
-        sys.exit(f"Fehler beim Lesen aus dem Cluster: {err}")
+        die(f"Fehler beim Lesen aus dem Cluster: {err}")
     return json.loads(out).get("items", [])
 
 
@@ -64,7 +71,7 @@ def load_from_files(paths, namespace):
     try:
         import yaml
     except ImportError:
-        sys.exit("--file benoetigt PyYAML (pip install pyyaml)")
+        die("--file benoetigt PyYAML (pip install pyyaml)")
     files = []
     for path in paths:
         if os.path.isdir(path):
@@ -100,11 +107,9 @@ def hosts_overlap(a, b):
     for wild, other in ((a, b), (b, a)):
         if wild == "*":
             return True
-        if wild.startswith("*."):
-            suffix = wild[1:]
-            other_base = other[1:] if other.startswith("*") else "." + other
-            if other_base.endswith(suffix):
-                return True
+        # *.foo passt nur auf Subdomains (a.foo, *.a.foo), nicht auf foo selbst.
+        if wild.startswith("*.") and other.endswith(wild[1:]):
+            return True
     return False
 
 
@@ -131,21 +136,23 @@ def string_covers(a, b, ignore_case=False):
         return True
     if not b:
         return False
-    norm = (lambda s: s.lower()) if ignore_case else (lambda s: s)
     (ka, va), (kb, vb) = next(iter(a.items())), next(iter(b.items()))
-    va, vb = norm(va), norm(vb)
-    if ka == "exact":
-        return kb == "exact" and va == vb
-    if ka == "prefix":
-        return kb in ("exact", "prefix") and vb.startswith(va)
     if ka == "regex":
+        # Regex-Muster nicht kleinschreiben (\D wuerde zu \d), sondern per Flag vergleichen.
         if kb == "regex":
             return va == vb
         if kb == "exact":
             try:
-                return re.fullmatch(va, vb) is not None
+                return re.fullmatch(va, vb, re.IGNORECASE if ignore_case else 0) is not None
             except re.error:
                 return False
+        return False
+    if ignore_case:
+        va, vb = va.lower(), vb.lower()
+    if ka == "exact":
+        return kb == "exact" and va == vb
+    if ka == "prefix":
+        return kb in ("exact", "prefix") and vb.startswith(va)
     return False
 
 
@@ -273,6 +280,8 @@ def check_vs_hosts(vss, findings):
                 continue
             if not host_a.startswith("*") or not hosts_overlap(host_a, host_b):
                 continue
+            if host_b.startswith("*") and len(host_b) < len(host_a):
+                continue
             findings.add(WARN, "VS-HOST-WILDCARD", [res(vs_a), res(vs_b)],
                          f"Wildcard-Host {host_a} ({res(vs_a)}) ueberlagert {host_b} ({res(vs_b)}) "
                          f"an {gw_a}; fuer {host_b} gelten nur die Routen von {res(vs_b)}")
@@ -313,7 +322,7 @@ def check_drs(drs, findings):
         if len(group) > 1:
             findings.add(WARN, "DR-HOST-DUP", names,
                          f"Host {host} hat {len(group)} DestinationRules; Subsets werden gemerged, "
-                         f"trafficPolicy kommt nur aus der aeltesten")
+                         f"trafficPolicy kommt nur aus der aeltesten DR, die eine setzt")
             with_policy = [d for d in group if d.get("spec", {}).get("trafficPolicy")]
             if len(with_policy) > 1:
                 findings.add(ERROR, "DR-POLICY-CONFLICT", [res(d) for d in with_policy],

@@ -19,8 +19,8 @@ Das Tool nutzt nur die Python-Standardbibliothek und ruft `kubectl` auf. Für
 | `VS-GW-SHADOW` | ERROR | Beim Gateway-Merge kann eine Route eines VS eine Route des anderen verdecken, z. B. ein Catch-All. |
 | `VS-ROUTE-SHADOWED` | ERROR | Eine Route im VS ist nie erreichbar, weil eine frühere Route alle ihre Requests abfängt (Catch-All, `prefix /`, allgemeinerer Prefix, Regex, Teilmenge der Header-Bedingungen, identischer Match). |
 | `VS-SUBSET-MISSING` | ERROR | Der VS verweist auf ein Subset, das in keiner DR des Hosts definiert ist, oder für den Host gibt es gar keine DR. Das führt zu HTTP 503 (`NR`). |
-| `DR-HOST-DUP` | WARN | Mehrere DR für denselben Host (und denselben `workloadSelector`). Subsets werden gemerged. |
-| `DR-POLICY-CONFLICT` | ERROR | Mehrere dieser DR setzen eine `trafficPolicy`. Nur die älteste wird angewendet. |
+| `DR-HOST-DUP` | WARN | Mehrere DR für denselben Host (und denselben `workloadSelector`). Subsets werden gemerged, die `trafficPolicy` kommt aus der ältesten DR, die eine setzt. |
+| `DR-POLICY-CONFLICT` | ERROR | Mehrere dieser DR setzen eine `trafficPolicy`. Nur die Policy der ältesten wird angewendet. |
 | `DR-SUBSET-DUP` | ERROR | Ein Subset-Name ist für einen Host mehrfach definiert. Nur die erste Definition greift. |
 | `DR-HOST-WILDCARD` | WARN | Eine Wildcard-DR gilt für einen Host nicht, weil eine konkrete DR sie dort vollständig ersetzt (kein Merge). |
 | `DR-SUBSET-LABELS` | WARN | Zwei Subsets eines Hosts selektieren exakt dieselben Labels. |
@@ -49,8 +49,9 @@ Intern ausgeführter Befehl (ohne `--file`):
 kubectl get virtualservices.networking.istio.io,destinationrules.networking.istio.io -n <namespace> -o json
 ```
 
-Exit-Code: `1`, wenn mindestens ein `ERROR` gefunden wurde, sonst `0`. Damit
-lässt sich das Tool direkt in CI einsetzen.
+Exit-Code: `1`, wenn mindestens ein `ERROR` gefunden wurde, `2` bei einem
+Ladefehler (Cluster nicht erreichbar, PyYAML fehlt), sonst `0`. Damit lässt
+sich das Tool direkt in CI einsetzen.
 
 Beispielausgabe:
 
@@ -99,9 +100,11 @@ Führt intern aus:
 kubectl apply -f manifests/
 ```
 
-Beim Apply warnt der Istio-Webhook bereits bei einigen Route-Fällen (30, 31 und
-dem identischen Match in 32). Die Überlagerungen zwischen mehreren Ressourcen
-sowie der Regex- und der Header-Fall in 32 werden vom Webhook nicht erkannt.
+Beim Apply warnt der Istio-Webhook bereits bei einigen Route-Fällen: bei
+Routen nach einem Catch-All (kein Match oder `prefix: /`, also 30 und
+`route-root` in 31) und beim identischen Match in 32. Nicht erkannt werden die
+Überlagerungen zwischen mehreren Ressourcen, der allgemeinere Prefix in
+`route-prefix` (31) sowie der Regex- und der Header-Fall in 32.
 
 ### Test
 
@@ -113,16 +116,20 @@ sowie der Regex- und der Header-Fall in 32 werden vom Webhook nicht erkannt.
 Führt intern aus:
 
 ```bash
-python3 virtualservice.py vstest \
-  | sed -nE 's/^\[[A-Z ]+\] +([A-Z-]+) +(.*)/\1\t\2/p' | sed 's/, /,/g' \
+python3 virtualservice.py vstest > "$TMP/output.txt"
+# bzw. offline: python3 virtualservice.py vstest --file manifests/
+# ohne installiertes PyYAML: uv run -q --no-project --with pyyaml python3 virtualservice.py ...
+sed -nE 's/^\[[A-Z ]+\] +([A-Z-]+) +(.*)/\1\t\2/p' "$TMP/output.txt" | sed 's/, /,/g' \
   | sort > "$TMP/actual.tsv"
-# bzw. offline: python3 virtualservice.py vstest --file manifests/ | ...
 grep -v '^#' test/expected.tsv | sort > "$TMP/expected.tsv"
 diff -u "$TMP/expected.tsv" "$TMP/actual.tsv"
 ```
 
 Der Test schlägt fehl, wenn ein erwarteter Befund fehlt oder ein zusätzlicher
-auftaucht (z. B. ein Fehlalarm für `10-ok.yaml`).
+auftaucht (z. B. ein Fehlalarm für `10-ok.yaml`). Exit-Code `1` des Tools
+(ERROR-Befunde) ist erwartet; bricht es mit einem anderen Code ab, z. B. bei
+einem Ladefehler, bricht auch der Test mit diesem Code ab, statt einen
+irreführenden Diff zu zeigen.
 
 ### Aufräumen
 
