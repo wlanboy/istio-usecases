@@ -19,7 +19,7 @@ Nutzt nur die Python-Standardbibliothek und ruft `kubectl` auf. Mit --file
 werden stattdessen lokale YAML-Manifeste gelesen (benoetigt PyYAML).
 
 Verwendung:
-    python3 virtualservice.py <namespace> [--context CONTEXT] [--format table|tsv|json]
+    python3 virtualservice.py <namespace> [--context CONTEXT]
     python3 virtualservice.py <namespace> --file manifests/
 """
 
@@ -422,7 +422,6 @@ def main():
     parser.add_argument("--context", help="kubectl Context (optional)")
     parser.add_argument("--file", "-f", action="append",
                         help="YAML-Datei oder -Verzeichnis statt Cluster lesen (mehrfach moeglich)")
-    parser.add_argument("--format", choices=["table", "tsv", "json"], default="table")
     args = parser.parse_args()
 
     if args.file:
@@ -440,15 +439,9 @@ def main():
     check_subsets(vss, drs, args.namespace, findings)
     result = sorted(findings.items, key=lambda f: (f["severity"] != ERROR, f["code"], f["resources"]))
 
-    if args.format == "json":
-        print(json.dumps(result, indent=2))
-    elif args.format == "tsv":
-        for f in result:
-            print("\t".join([f["severity"], f["code"], ",".join(f["resources"]), f["message"]]))
-    else:
-        print(f"Namespace {args.namespace}: {len(vss)} VirtualServices, {len(drs)} DestinationRules")
-        print()
-        print_table(result)
+    print(f"Namespace {args.namespace}: {len(vss)} VirtualServices, {len(drs)} DestinationRules")
+    print()
+    print_table(result)
 
     sys.exit(1 if any(f["severity"] == ERROR for f in result) else 0)
 

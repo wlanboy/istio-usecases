@@ -13,7 +13,9 @@ if [[ "${1:-}" == "--offline" ]]; then
   SOURCE_ARGS=(--file manifests/)
 fi
 
-python3 virtualservice.py vstest "${SOURCE_ARGS[@]}" --format tsv | cut -f2,3 | sort > "$TMP/actual.tsv" || true
+python3 virtualservice.py vstest "${SOURCE_ARGS[@]}" \
+  | sed -nE 's/^\[[A-Z ]+\] +([A-Z-]+) +(.*)/\1\t\2/p' | sed 's/, /,/g' \
+  | sort > "$TMP/actual.tsv" || true
 grep -v '^#' test/expected.tsv | sort > "$TMP/expected.tsv"
 
 if diff -u "$TMP/expected.tsv" "$TMP/actual.tsv"; then

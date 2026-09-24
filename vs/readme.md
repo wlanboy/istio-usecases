@@ -41,7 +41,6 @@ Grenzen:
 python3 virtualservice.py <namespace>                     # aus dem Cluster lesen
 python3 virtualservice.py <namespace> --context kind-local
 python3 virtualservice.py <namespace> --file manifests/   # lokale YAML-Dateien statt Cluster
-python3 virtualservice.py <namespace> --format json       # table (Standard) | tsv | json
 ```
 
 Intern ausgeführter Befehl (ohne `--file`):
@@ -114,8 +113,10 @@ sowie der Regex- und der Header-Fall in 32 werden vom Webhook nicht erkannt.
 Führt intern aus:
 
 ```bash
-python3 virtualservice.py vstest --format tsv | cut -f2,3 | sort > "$TMP/actual.tsv"
-# bzw. offline: python3 virtualservice.py vstest --file manifests/ --format tsv | ...
+python3 virtualservice.py vstest \
+  | sed -nE 's/^\[[A-Z ]+\] +([A-Z-]+) +(.*)/\1\t\2/p' | sed 's/, /,/g' \
+  | sort > "$TMP/actual.tsv"
+# bzw. offline: python3 virtualservice.py vstest --file manifests/ | ...
 grep -v '^#' test/expected.tsv | sort > "$TMP/expected.tsv"
 diff -u "$TMP/expected.tsv" "$TMP/actual.tsv"
 ```
