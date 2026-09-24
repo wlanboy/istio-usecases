@@ -82,9 +82,11 @@ def load_from_files(paths, namespace):
     items = []
     for f in files:
         with open(f) as fh:
+            # Eine Datei kann mehrere Dokumente (---) enthalten; nur VS/DR sind relevant.
             for doc in yaml.safe_load_all(fh):
                 if not doc or doc.get("kind") not in KIND_SHORT:
                     continue
+                # Manifeste ohne Namespace landen wie bei `kubectl apply -n` im Ziel-Namespace.
                 meta = doc.setdefault("metadata", {})
                 meta.setdefault("namespace", namespace)
                 if meta["namespace"] == namespace:
@@ -102,6 +104,7 @@ def fqdn(host, namespace):
 
 
 def hosts_overlap(a, b):
+    """True, wenn es einen Hostnamen gibt, auf den sowohl a als auch b passen."""
     if a == b:
         return True
     for wild, other in ((a, b), (b, a)):
@@ -114,6 +117,7 @@ def hosts_overlap(a, b):
 
 
 def norm_gateway(gw, namespace):
+    """Gateway-Referenzen auf <namespace>/<name> bringen, damit 'gw' und 'ns/gw' gleich sind."""
     if gw == "mesh" or "/" in gw:
         return gw
     return f"{namespace}/{gw}"
@@ -132,15 +136,20 @@ def route_label(route, idx):
 # Im Zweifel wird False geliefert (lieber einen Konflikt uebersehen als falsch melden).
 
 def string_covers(a, b, ignore_case=False):
+    """Vergleicht zwei Istio-StringMatches ({exact|prefix|regex: wert})."""
+    # Keine Bedingung in a matcht alles; eine Bedingung nur in b schraenkt b ein.
     if not a:
         return True
     if not b:
         return False
+    # Ein StringMatch hat genau einen Schluessel: exact, prefix oder regex.
     (ka, va), (kb, vb) = next(iter(a.items())), next(iter(b.items()))
     if ka == "regex":
         # Regex-Muster nicht kleinschreiben (\D wuerde zu \d), sondern per Flag vergleichen.
         if kb == "regex":
             return va == vb
+        # Ob eine Regex eine andere Regex oder ein Prefix umfasst, ist nicht
+        # sicher entscheidbar; nur gegen einen exakten Wert wird getestet.
         if kb == "exact":
             try:
                 return re.fullmatch(va, vb, re.IGNORECASE if ignore_case else 0) is not None
@@ -158,9 +167,11 @@ def string_covers(a, b, ignore_case=False):
 
 def uri_covers(ma, mb):
     a, b = ma.get("uri"), mb.get("uri")
+    # prefix "/" ist gleichbedeutend mit "kein URI-Match".
     if not a or a == {"prefix": "/"}:
         return True
     ia, ib = bool(ma.get("ignoreUriCase")), bool(mb.get("ignoreUriCase"))
+    # b ignoriert Gross/Klein, a nicht: b matcht z.B. /API, a aber nur /api.
     if ib and not ia:
         return False
     return string_covers(a, b, ignore_case=ia)
@@ -177,6 +188,8 @@ def map_covers(a, b):
 
 
 def match_covers(ma, mb, namespace):
+    """Ein HTTPMatchRequest ist eine UND-Verknuepfung: jede Bedingung von ma muss
+    von mb mindestens gleich streng erfuellt werden."""
     if not uri_covers(ma, mb):
         return False
     for field in ("scheme", "method", "authority"):
@@ -186,6 +199,7 @@ def match_covers(ma, mb, namespace):
         return False
     if not map_covers(ma.get("queryParams"), mb.get("queryParams")):
         return False
+    # withoutHeaders ist eine Negation; hier wird bewusst nur Gleichheit akzeptiert.
     for key, cond in (ma.get("withoutHeaders") or {}).items():
         if (mb.get("withoutHeaders") or {}).get(key) != cond:
             return False
@@ -195,6 +209,7 @@ def match_covers(ma, mb, namespace):
     labels_b = mb.get("sourceLabels") or {}
     if any(labels_b.get(k) != v for k, v in (ma.get("sourceLabels") or {}).items()):
         return False
+    # Ist ma auf Gateways beschraenkt, muss mb auf eine Teilmenge davon beschraenkt sein.
     if ma.get("gateways"):
         gw_a = {norm_gateway(g, namespace) for g in ma["gateways"]}
         gw_b = {norm_gateway(g, namespace) for g in mb.get("gateways") or []}
@@ -205,14 +220,19 @@ def match_covers(ma, mb, namespace):
 
 def route_covers(ra, rb, namespace):
     """True, wenn Route ra jeden Request abfaengt, den Route rb matchen wuerde."""
+    # Keine match-Liste = Catch-All, dargestellt als ein leerer Match.
     matches_a = ra.get("match") or [{}]
     matches_b = rb.get("match") or [{}]
+    # Mehrere Matches einer Route sind ODER-verknuepft: jeder Match von rb muss
+    # von mindestens einem Match von ra abgedeckt sein.
     return all(any(match_covers(ma, mb, namespace) for ma in matches_a) for mb in matches_b)
 
 
 # --- Pruefungen -----------------------------------------------------------
 
 class Findings:
+    """Sammelt Befunde und verwirft Duplikate (z.B. wenn Paare in beiden Richtungen gefunden werden)."""
+
     def __init__(self):
         self.items = []
         self._seen = set()
@@ -232,6 +252,7 @@ def vs_host_bindings(vss):
     for vs in vss:
         ns = vs["metadata"]["namespace"]
         spec = vs.get("spec", {})
+        # Ohne spec.gateways gilt ein VirtualService implizit nur fuer "mesh" (Sidecars).
         gateways = [norm_gateway(g, ns) for g in spec.get("gateways") or ["mesh"]]
         for host in spec.get("hosts") or []:
             for gw in gateways:
@@ -239,6 +260,7 @@ def vs_host_bindings(vss):
 
 
 def check_vs_hosts(vss, findings):
+    # VirtualServices nach (Gateway, Host) gruppieren; ein VS zaehlt pro Gruppe nur einmal.
     by_key = {}
     bindings = list(vs_host_bindings(vss))
     for gw, host, vs in bindings:
@@ -250,6 +272,7 @@ def check_vs_hosts(vss, findings):
         if len(group) < 2:
             continue
         names = [res(v) for v in group]
+        # Am Sidecar wird nicht gemerged: ein doppelter Host ist immer ein Fehler.
         if gw == "mesh":
             findings.add(ERROR, "VS-HOST-DUP", names,
                          f"Host {host} ist am Sidecar (mesh) in {len(group)} VirtualServices "
@@ -258,6 +281,8 @@ def check_vs_hosts(vss, findings):
         findings.add(WARN, "VS-GW-MERGE", names,
                      f"Host {host} an Gateway {gw} in {len(group)} VirtualServices; Routen "
                      f"werden gemerged, die Reihenfolge ist nicht garantiert")
+        # Am Gateway werden die Routen aneinandergehaengt. Da die Reihenfolge der VS
+        # nicht feststeht, wird jedes Paar in beiden Richtungen (a vor b, b vor a) geprueft.
         ns = group[0]["metadata"]["namespace"]
         for a in group:
             for b in group:
@@ -272,14 +297,18 @@ def check_vs_hosts(vss, findings):
                                          f"Host {host} an Gateway {gw}: Route {route_label(rb, ib)} "
                                          f"in {res(b)} wird von Route {route_label(ra, ia)} in "
                                          f"{res(a)} verdeckt, falls {res(a)} im Merge zuerst kommt")
+                            # Eine verdeckende Route pro rb reicht fuer den Befund.
                             break
 
+    # Wildcard-Pruefung: Istio waehlt pro Request den spezifischsten Host. Der
+    # Wildcard-VS gilt fuer den konkreten Host dann gar nicht mehr (kein Merge).
     for gw_a, host_a, vs_a in bindings:
         for gw_b, host_b, vs_b in bindings:
             if gw_a != gw_b or vs_a is vs_b or host_a == host_b:
                 continue
             if not host_a.startswith("*") or not hosts_overlap(host_a, host_b):
                 continue
+            # Ist host_b selbst die allgemeinere Wildcard, wird das Paar andersherum gemeldet.
             if host_b.startswith("*") and len(host_b) < len(host_a):
                 continue
             findings.add(WARN, "VS-HOST-WILDCARD", [res(vs_a), res(vs_b)],
@@ -291,6 +320,8 @@ def check_vs_routes(vss, findings):
     for vs in vss:
         ns = vs["metadata"]["namespace"]
         routes = vs.get("spec", {}).get("http") or []
+        # Istio wertet HTTP-Routen der Reihe nach aus, der erste Treffer gewinnt.
+        # Route j ist tot, wenn eine fruehere Route i alle ihre Requests abfaengt.
         for j, rj in enumerate(routes):
             for i in range(j):
                 ri = routes[i]
@@ -304,6 +335,10 @@ def check_vs_routes(vss, findings):
 
 
 def dr_groups(drs):
+    """Gruppiert DestinationRules nach (Host, workloadSelector).
+
+    Nur DRs mit gleichem Host und gleichem workloadSelector konkurrieren
+    miteinander; der Selector wird als sortiertes JSON zum Schluessel."""
     groups = {}
     for dr in drs:
         spec = dr.get("spec", {})
@@ -329,6 +364,8 @@ def check_drs(drs, findings):
                              f"Host {host}: {len(with_policy)} DestinationRules setzen eine "
                              f"trafficPolicy, nur die der aeltesten wird angewendet")
 
+        # Ueber alle DRs eines Hosts hinweg merken, wer welchen Subset-Namen und
+        # welche Label-Kombination zuerst definiert hat.
         subset_owner = {}
         label_owner = {}
         for dr in group:
@@ -349,6 +386,8 @@ def check_drs(drs, findings):
                 else:
                     label_owner.setdefault(labels, (res(dr), name))
 
+    # Anders als Subsets werden Wildcard- und konkrete DRs nicht gemerged: fuer einen
+    # Host gilt nur die spezifischste DR, die Einstellungen der Wildcard-DR entfallen.
     for (host_a, sel_a), group_a in groups.items():
         if not host_a.startswith("*"):
             continue
@@ -365,6 +404,7 @@ def check_drs(drs, findings):
 
 
 def vs_destinations(vs):
+    """Liefert alle Ziele eines VS: Routen-Ziele sowie mirror/mirrors aus http, tcp und tls."""
     spec = vs.get("spec", {})
     for kind in ("http", "tcp", "tls"):
         for route in spec.get(kind) or []:
@@ -388,6 +428,8 @@ def check_subsets(vss, drs, namespace, findings):
             if not subset or not dest.get("host"):
                 continue
             host = fqdn(dest["host"], ns)
+            # Zuerst eine DR mit exakt diesem Host suchen, sonst wie Istio die
+            # spezifischste (laengste) passende Wildcard-DR nehmen.
             matching = [g for (h, _), g in groups.items() if h == host]
             if not matching:
                 wild = [(h, g) for (h, _), g in groups.items()
@@ -397,6 +439,8 @@ def check_subsets(vss, drs, namespace, findings):
                     matching = [g for h, g in wild if len(h) == longest]
             drs_for_host = [d for g in matching for d in g]
             if not drs_for_host:
+                # Fuer Hosts ausserhalb des Namespace kann die DR woanders liegen,
+                # daher wird nur bei lokalen Services ein Fehler gemeldet.
                 if host.endswith(local_suffix):
                     findings.add(ERROR, "VS-SUBSET-MISSING", [res(vs)],
                                  f"Subset '{subset}' fuer {host} referenziert, aber es gibt "
@@ -446,12 +490,14 @@ def main():
     check_vs_routes(vss, findings)
     check_drs(drs, findings)
     check_subsets(vss, drs, args.namespace, findings)
+    # Fehler zuerst, danach nach Code und Ressourcen sortiert.
     result = sorted(findings.items, key=lambda f: (f["severity"] != ERROR, f["code"], f["resources"]))
 
     print(f"Namespace {args.namespace}: {len(vss)} VirtualServices, {len(drs)} DestinationRules")
     print()
     print_table(result)
 
+    # Exit-Code: 0 = ok/nur Warnungen, 1 = mindestens ein ERROR, 2 = Ladefehler (siehe die()).
     sys.exit(1 if any(f["severity"] == ERROR for f in result) else 0)
 
 
