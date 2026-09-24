@@ -4,7 +4,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: shop-cart
-  namespace: vstest
 spec:
   hosts:
     - shop.vstest.local
@@ -22,12 +21,11 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: shop-checkout
-  namespace: vstest
 spec:
   hosts:
     - shop.vstest.local
   gateways:
-    - vstest/vstest-gw
+    - vstest-gw
   http:
     - match:
         - uri:

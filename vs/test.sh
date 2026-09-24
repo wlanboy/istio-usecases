@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prueft, ob virtualservice.py genau die in test/expected.tsv erwarteten Befunde meldet.
-#   ./test.sh            liest VirtualServices/DestinationRules aus dem Cluster (Namespace vstest)
-#   ./test.sh --offline  liest direkt die YAML-Dateien aus manifests/ (kein Cluster noetig)
+#   ./test.sh [namespace]  liest VirtualServices/DestinationRules aus dem Cluster (Default: vstest)
+#   ./test.sh --offline    liest direkt die YAML-Dateien aus manifests/ (kein Cluster noetig)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,17 +11,19 @@ trap 'rm -rf "$TMP"' EXIT
 PYTHON=(python3)
 SOURCE_ARGS=()
 if [[ "${1:-}" == "--offline" ]]; then
+  shift
   SOURCE_ARGS=(--file manifests/)
   # --file braucht PyYAML; ist es nicht installiert, stellt uv es temporaer bereit.
   if ! python3 -c 'import yaml' 2>/dev/null && command -v uv >/dev/null; then
     PYTHON=(uv run -q --no-project --with pyyaml python3)
   fi
 fi
+NAMESPACE="${1:-vstest}"
 
 # Exit-Code 1 bedeutet "ERROR-Befunde gefunden" und ist hier erwartet.
 # Jeder andere Code ungleich 0 (Traceback, kubectl-Fehler, fehlendes PyYAML) bricht ab.
 rc=0
-"${PYTHON[@]}" virtualservice.py vstest "${SOURCE_ARGS[@]}" > "$TMP/output.txt" || rc=$?
+"${PYTHON[@]}" virtualservice.py "$NAMESPACE" "${SOURCE_ARGS[@]}" > "$TMP/output.txt" || rc=$?
 if (( rc > 1 )); then
   echo "FEHLER: virtualservice.py ist mit Exit-Code $rc abgebrochen." >&2
   exit "$rc"

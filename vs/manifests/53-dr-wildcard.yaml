@@ -4,7 +4,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drwild-all
-  namespace: vstest
 spec:
   host: "*.drwild.internal"
   trafficPolicy:
@@ -15,7 +14,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drwild-api
-  namespace: vstest
 spec:
   host: api.drwild.internal
   trafficPolicy:

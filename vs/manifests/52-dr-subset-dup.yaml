@@ -4,7 +4,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drsub-a
-  namespace: vstest
 spec:
   host: drsub-svc
   subsets:
@@ -16,7 +15,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drsub-b
-  namespace: vstest
 spec:
   host: drsub-svc
   subsets:

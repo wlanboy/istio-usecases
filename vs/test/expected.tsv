@@ -1,4 +1,4 @@
-# Erwartete Befunde fuer manifests/ im Namespace vstest
+# Erwartete Befunde fuer manifests/ (unabhaengig vom Namespace)
 # Format: CODE<TAB>Ressourcen (sortiert, kommagetrennt). Ein Eintrag pro Befund.
 # 10-ok.yaml (ok-vs, ok-dr) darf in keinem Befund auftauchen.
 VS-HOST-DUP	vs/dup-a,vs/dup-b,vs/dup-c

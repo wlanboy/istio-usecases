@@ -1,10 +1,9 @@
 # VS-HOST-DUP: drei VirtualServices fuer denselben Host am Sidecar (mesh).
-# dup-c nutzt den FQDN, dup-a/dup-b den Kurznamen - beides ist derselbe Host.
+# Kein Namespace im YAML, daher nur Kurznamen (ein FQDN wuerde den Namespace festlegen).
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: dup-a
-  namespace: vstest
 spec:
   hosts:
     - dup-svc
@@ -20,7 +19,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: dup-b
-  namespace: vstest
 spec:
   hosts:
     - dup-svc
@@ -36,10 +34,9 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: dup-c
-  namespace: vstest
 spec:
   hosts:
-    - dup-svc.vstest.svc.cluster.local
+    - dup-svc
   http:
     - route:
         - destination:

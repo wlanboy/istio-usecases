@@ -62,17 +62,23 @@ Beispielausgabe:
         Host shop.vstest.local an Gateway vstest/vstest-gw in 2 VirtualServices; Routen werden gemerged, die Reihenfolge ist nicht garantiert
 ```
 
-## Testfälle (Namespace `vstest`)
+## Testfälle
 
 Jede Datei in [`manifests/`](manifests/) deckt ein Fehlerbild mit eigenen
 Hostnamen ab, damit sich die Fälle nicht gegenseitig beeinflussen. Die
 Kommentare in den Dateien beschreiben den jeweiligen Konflikt.
 
+Die Manifeste enthalten keinen Namespace. Er wird beim Apply mit `-n`
+angegeben, so lässt sich auf einem anderen Cluster auch ein bestehender
+Namespace nutzen. Deshalb verwenden die Testfälle nur Kurznamen: ein FQDN
+(`svc.<ns>.svc.cluster.local`) oder eine Gateway-Referenz `<ns>/<gw>` würde den
+Namespace wieder festlegen.
+
 | Datei | Erwartete Befunde |
 |-------|-------------------|
-| `00-namespace.yaml`, `01-gateway.yaml` | – (Namespace `vstest`, Gateway `vstest-gw`) |
+| `01-gateway.yaml` | – (Gateway `vstest-gw`) |
 | `10-ok.yaml` | keine (Positivfall: korrekte Reihenfolge, alle Subsets definiert) |
-| `20-vs-dup-host.yaml` | `VS-HOST-DUP` (Kurzname + FQDN) |
+| `20-vs-dup-host.yaml` | `VS-HOST-DUP` |
 | `21-vs-wildcard.yaml` | `VS-HOST-WILDCARD` |
 | `22-vs-gw-merge.yaml` | `VS-GW-MERGE` |
 | `23-vs-gw-shadow.yaml` | `VS-GW-MERGE`, `VS-GW-SHADOW` |
@@ -80,7 +86,7 @@ Kommentare in den Dateien beschreiben den jeweiligen Konflikt.
 | `31-vs-route-prefix.yaml` | `VS-ROUTE-SHADOWED` ×3 (Prefix, Exact unter Prefix, `prefix /`) |
 | `32-vs-route-match.yaml` | `VS-ROUTE-SHADOWED` ×3 (Regex, Header-Teilmenge, identischer Match) |
 | `40-vs-subset-missing.yaml` | `VS-SUBSET-MISSING` ×2 (Subset fehlt, DR fehlt) |
-| `50-dr-dup-host.yaml` | `DR-HOST-DUP` (Kurzname + FQDN) |
+| `50-dr-dup-host.yaml` | `DR-HOST-DUP` |
 | `51-dr-policy-conflict.yaml` | `DR-HOST-DUP`, `DR-POLICY-CONFLICT` |
 | `52-dr-subset-dup.yaml` | `DR-HOST-DUP`, `DR-SUBSET-DUP` |
 | `53-dr-wildcard.yaml` | `DR-HOST-WILDCARD` |
@@ -91,13 +97,18 @@ Die exakte Liste steht in [`test/expected.tsv`](test/expected.tsv).
 ### Installation
 
 ```bash
-./install.sh
+./install.sh               # Namespace vstest
+./install.sh <namespace>   # z. B. ein bestehender Namespace auf einem anderen Cluster
 ```
 
 Führt intern aus:
 
 ```bash
-kubectl apply -f manifests/
+# nur wenn der Namespace noch nicht existiert:
+kubectl create namespace <namespace>
+kubectl label namespace <namespace> istio-injection=enabled
+
+kubectl apply -n <namespace> -f manifests/
 ```
 
 Beim Apply warnt der Istio-Webhook bereits bei einigen Route-Fällen: bei
@@ -109,14 +120,15 @@ Routen nach einem Catch-All (kein Match oder `prefix: /`, also 30 und
 ### Test
 
 ```bash
-./test.sh              # gegen den Cluster (Namespace vstest)
-./test.sh --offline    # direkt gegen manifests/, kein Cluster nötig
+./test.sh                # gegen den Cluster (Namespace vstest)
+./test.sh <namespace>    # gegen den Cluster, anderer Namespace
+./test.sh --offline      # direkt gegen manifests/, kein Cluster nötig
 ```
 
 Führt intern aus:
 
 ```bash
-python3 virtualservice.py vstest > "$TMP/output.txt"
+python3 virtualservice.py <namespace> > "$TMP/output.txt"
 # bzw. offline: python3 virtualservice.py vstest --file manifests/
 # ohne installiertes PyYAML: uv run -q --no-project --with pyyaml python3 virtualservice.py ...
 sed -nE 's/^\[[A-Z ]+\] +([A-Z-]+) +(.*)/\1\t\2/p' "$TMP/output.txt" | sed 's/, /,/g' \
@@ -134,11 +146,16 @@ irreführenden Diff zu zeigen.
 ### Aufräumen
 
 ```bash
-./uninstall.sh
+./uninstall.sh               # Namespace vstest
+./uninstall.sh <namespace>
 ```
 
 Führt intern aus:
 
 ```bash
-kubectl delete namespace vstest --ignore-not-found
+kubectl delete -n <namespace> -f manifests/ --ignore-not-found
 ```
+
+Der Namespace selbst bleibt bestehen, da er auch ein vorhandener sein kann.
+Einen von `install.sh` angelegten Namespace entfernt man bei Bedarf mit
+`kubectl delete namespace vstest`.

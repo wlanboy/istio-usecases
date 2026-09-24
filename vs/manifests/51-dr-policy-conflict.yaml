@@ -4,7 +4,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drpol-lb
-  namespace: vstest
 spec:
   host: drpol-svc
   trafficPolicy:
@@ -15,7 +14,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drpol-tls
-  namespace: vstest
 spec:
   host: drpol-svc
   trafficPolicy:

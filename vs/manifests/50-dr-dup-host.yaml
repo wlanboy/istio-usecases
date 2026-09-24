@@ -1,10 +1,9 @@
-# DR-HOST-DUP: zwei DestinationRules fuer denselben Host (Kurzname + FQDN).
+# DR-HOST-DUP: zwei DestinationRules fuer denselben Host.
 # Nur eine setzt eine trafficPolicy -> Warnung, Subsets werden gemerged.
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drdup-a
-  namespace: vstest
 spec:
   host: drdup-svc
   trafficPolicy:
@@ -20,9 +19,8 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: drdup-b
-  namespace: vstest
 spec:
-  host: drdup-svc.vstest.svc.cluster.local
+  host: drdup-svc
   subsets:
     - name: v2
       labels:

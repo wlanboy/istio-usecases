@@ -5,7 +5,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: blog-main
-  namespace: vstest
 spec:
   hosts:
     - blog.vstest.local
@@ -20,7 +19,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: blog-admin
-  namespace: vstest
 spec:
   hosts:
     - blog.vstest.local

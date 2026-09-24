@@ -5,7 +5,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: sub-vs
-  namespace: vstest
 spec:
   hosts:
     - sub-svc
@@ -32,7 +31,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: sub-dr
-  namespace: vstest
 spec:
   host: sub-svc
   subsets:
@@ -47,7 +45,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: nodr-vs
-  namespace: vstest
 spec:
   hosts:
     - nodr-svc

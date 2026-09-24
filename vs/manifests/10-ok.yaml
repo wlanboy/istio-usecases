@@ -5,7 +5,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: ok-vs
-  namespace: vstest
 spec:
   hosts:
     - ok-svc
@@ -40,7 +39,6 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: ok-dr
-  namespace: vstest
 spec:
   host: ok-svc
   trafficPolicy:

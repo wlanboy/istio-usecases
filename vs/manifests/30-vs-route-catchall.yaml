@@ -3,7 +3,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: route-catchall
-  namespace: vstest
 spec:
   hosts:
     - catchall-svc

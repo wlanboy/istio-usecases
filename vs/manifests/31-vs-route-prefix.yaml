@@ -5,7 +5,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: route-prefix
-  namespace: vstest
 spec:
   hosts:
     - prefix-svc
@@ -36,7 +35,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: route-root
-  namespace: vstest
 spec:
   hosts:
     - root-svc

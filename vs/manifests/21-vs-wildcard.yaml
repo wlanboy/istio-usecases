@@ -5,7 +5,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: wild-all
-  namespace: vstest
 spec:
   hosts:
     - "*.wild.internal"
@@ -19,7 +18,6 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: wild-specific
-  namespace: vstest
 spec:
   hosts:
     - api.wild.internal
