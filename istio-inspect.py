@@ -93,7 +93,7 @@ def section_proxy_status(namespace, context):
         cmd += ["--context", context]
     cmd += ["proxy-status"]
     out, err = run(cmd)
-    if err:
+    if out is None:
         print(f"  Fehler: {err}")
         return
     lines = [l for l in out.splitlines() if f".{namespace} " in l or l.startswith("NAME")]
