@@ -1,0 +1,29 @@
+# VS-HOST-WILDCARD: *.wild.internal ueberlagert api.wild.internal.
+# Fuer api.wild.internal greifen nur die Routen von wild-specific,
+# die Timeout-Regel aus wild-all gilt dort nicht.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: wild-all
+  namespace: vstest
+spec:
+  hosts:
+    - "*.wild.internal"
+  http:
+    - timeout: 5s
+      route:
+        - destination:
+            host: wild-backend
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: wild-specific
+  namespace: vstest
+spec:
+  hosts:
+    - api.wild.internal
+  http:
+    - route:
+        - destination:
+            host: wild-api

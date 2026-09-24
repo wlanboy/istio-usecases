@@ -1,0 +1,55 @@
+# Positivfall: KEIN Befund erwartet.
+# Die zweite Route ist allgemeiner als die erste und steht korrekt danach,
+# der Catch-All steht am Ende, alle Subsets sind definiert.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ok-vs
+  namespace: vstest
+spec:
+  hosts:
+    - ok-svc
+  http:
+    - name: canary-api
+      match:
+        - headers:
+            x-canary:
+              exact: "true"
+          uri:
+            prefix: /api
+      route:
+        - destination:
+            host: ok-svc
+            subset: v2
+    - name: canary
+      match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: ok-svc
+            subset: v2
+    - name: default
+      route:
+        - destination:
+            host: ok-svc
+            subset: v1
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: ok-dr
+  namespace: vstest
+spec:
+  host: ok-svc
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2

@@ -1,0 +1,23 @@
+# DR-HOST-DUP + DR-POLICY-CONFLICT: beide DRs setzen eine trafficPolicy,
+# nur die aelteste wird angewendet (mTLS vs. Load Balancing).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: drpol-lb
+  namespace: vstest
+spec:
+  host: drpol-svc
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_REQUEST
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: drpol-tls
+  namespace: vstest
+spec:
+  host: drpol-svc
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL

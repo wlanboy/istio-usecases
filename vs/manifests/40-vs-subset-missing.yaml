@@ -1,0 +1,58 @@
+# VS-SUBSET-MISSING:
+#  - sub-vs verweist auf Subset v3, die DR sub-dr kennt nur v1/v2
+#  - nodr-vs verweist auf Subset v1 von nodr-svc, fuer den es gar keine DR gibt
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: sub-vs
+  namespace: vstest
+spec:
+  hosts:
+    - sub-svc
+  http:
+    - match:
+        - headers:
+            x-beta:
+              exact: "true"
+      route:
+        - destination:
+            host: sub-svc
+            subset: v3
+    - route:
+        - destination:
+            host: sub-svc
+            subset: v1
+          weight: 90
+        - destination:
+            host: sub-svc
+            subset: v2
+          weight: 10
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: sub-dr
+  namespace: vstest
+spec:
+  host: sub-svc
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: nodr-vs
+  namespace: vstest
+spec:
+  hosts:
+    - nodr-svc
+  http:
+    - route:
+        - destination:
+            host: nodr-svc
+            subset: v1

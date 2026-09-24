@@ -1,0 +1,16 @@
+# Gateway fuer die Gateway-Merge-Faelle (22, 23)
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: vstest-gw
+  namespace: vstest
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*.vstest.local"

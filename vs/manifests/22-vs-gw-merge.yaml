@@ -1,0 +1,37 @@
+# VS-GW-MERGE: zwei VirtualServices fuer shop.vstest.local am selben Gateway.
+# Die Routen ueberschneiden sich nicht -> nur Warnung (Merge-Reihenfolge).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: shop-cart
+  namespace: vstest
+spec:
+  hosts:
+    - shop.vstest.local
+  gateways:
+    - vstest-gw
+  http:
+    - match:
+        - uri:
+            prefix: /cart
+      route:
+        - destination:
+            host: cart
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: shop-checkout
+  namespace: vstest
+spec:
+  hosts:
+    - shop.vstest.local
+  gateways:
+    - vstest/vstest-gw
+  http:
+    - match:
+        - uri:
+            prefix: /checkout
+      route:
+        - destination:
+            host: checkout

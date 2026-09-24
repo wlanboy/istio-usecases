@@ -1,0 +1,15 @@
+# DR-SUBSET-LABELS: Subsets v1 und stable selektieren dieselben Pods.
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: drlabel-dr
+  namespace: vstest
+spec:
+  host: drlabel-svc
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: stable
+      labels:
+        version: v1

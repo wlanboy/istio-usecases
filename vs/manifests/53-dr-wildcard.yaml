@@ -1,0 +1,24 @@
+# DR-HOST-WILDCARD: *.drwild.internal setzt TLS, api.drwild.internal hat eine
+# eigene DR ohne TLS. Fuer api.drwild.internal gilt nur drwild-api.
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: drwild-all
+  namespace: vstest
+spec:
+  host: "*.drwild.internal"
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: drwild-api
+  namespace: vstest
+spec:
+  host: api.drwild.internal
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 5

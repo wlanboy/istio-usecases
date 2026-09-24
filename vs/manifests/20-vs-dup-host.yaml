@@ -1,0 +1,46 @@
+# VS-HOST-DUP: drei VirtualServices fuer denselben Host am Sidecar (mesh).
+# dup-c nutzt den FQDN, dup-a/dup-b den Kurznamen - beides ist derselbe Host.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: dup-a
+  namespace: vstest
+spec:
+  hosts:
+    - dup-svc
+  http:
+    - match:
+        - uri:
+            prefix: /a
+      route:
+        - destination:
+            host: dup-svc
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: dup-b
+  namespace: vstest
+spec:
+  hosts:
+    - dup-svc
+  http:
+    - match:
+        - uri:
+            prefix: /b
+      route:
+        - destination:
+            host: dup-svc
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: dup-c
+  namespace: vstest
+spec:
+  hosts:
+    - dup-svc.vstest.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: dup-svc

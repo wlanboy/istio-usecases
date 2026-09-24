@@ -1,0 +1,59 @@
+# VS-ROUTE-SHADOWED mit kombinierten Bedingungen:
+#  - regex /items/[0-9]+ verdeckt exact /items/42
+#  - Header-Match x-user=admin verdeckt x-user=admin UND prefix /admin
+#  - identischer Match (method GET) doppelt
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: route-match
+  namespace: vstest
+spec:
+  hosts:
+    - match-svc
+  http:
+    - name: items
+      match:
+        - uri:
+            regex: /items/[0-9]+
+      route:
+        - destination:
+            host: match-svc
+    - name: item-42
+      match:
+        - uri:
+            exact: /items/42
+      route:
+        - destination:
+            host: match-special
+    - name: admin-user
+      match:
+        - headers:
+            x-user:
+              exact: admin
+      route:
+        - destination:
+            host: match-admin
+    - name: admin-user-path
+      match:
+        - headers:
+            x-user:
+              exact: admin
+          uri:
+            prefix: /admin
+      route:
+        - destination:
+            host: match-admin-path
+    - name: get
+      match:
+        - method:
+            exact: GET
+      route:
+        - destination:
+            host: match-svc
+    - name: get-again
+      match:
+        - method:
+            exact: GET
+      route:
+        - destination:
+            host: match-get

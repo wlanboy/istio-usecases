@@ -1,0 +1,57 @@
+# VS-ROUTE-SHADOWED: allgemeinere Matches stehen vor spezielleren.
+#  - prefix /api verdeckt prefix /api/v2 und exact /api/health
+#  - prefix "/" verdeckt jede weitere Route
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: route-prefix
+  namespace: vstest
+spec:
+  hosts:
+    - prefix-svc
+  http:
+    - name: api
+      match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: prefix-svc
+    - name: api-v2
+      match:
+        - uri:
+            prefix: /api/v2
+      route:
+        - destination:
+            host: prefix-v2
+    - name: health
+      match:
+        - uri:
+            exact: /api/health
+      route:
+        - destination:
+            host: prefix-health
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: route-root
+  namespace: vstest
+spec:
+  hosts:
+    - root-svc
+  http:
+    - name: root
+      match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: root-svc
+    - name: static
+      match:
+        - uri:
+            prefix: /static
+      route:
+        - destination:
+            host: root-static

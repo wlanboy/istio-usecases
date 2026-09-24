@@ -1,0 +1,24 @@
+# Erwartete Befunde fuer manifests/ im Namespace vstest
+# Format: CODE<TAB>Ressourcen (sortiert, kommagetrennt). Ein Eintrag pro Befund.
+# 10-ok.yaml (ok-vs, ok-dr) darf in keinem Befund auftauchen.
+VS-HOST-DUP	vs/dup-a,vs/dup-b,vs/dup-c
+VS-HOST-WILDCARD	vs/wild-all,vs/wild-specific
+VS-GW-MERGE	vs/shop-cart,vs/shop-checkout
+VS-GW-MERGE	vs/blog-admin,vs/blog-main
+VS-GW-SHADOW	vs/blog-admin,vs/blog-main
+VS-ROUTE-SHADOWED	vs/route-catchall
+VS-ROUTE-SHADOWED	vs/route-prefix
+VS-ROUTE-SHADOWED	vs/route-prefix
+VS-ROUTE-SHADOWED	vs/route-root
+VS-ROUTE-SHADOWED	vs/route-match
+VS-ROUTE-SHADOWED	vs/route-match
+VS-ROUTE-SHADOWED	vs/route-match
+VS-SUBSET-MISSING	dr/sub-dr,vs/sub-vs
+VS-SUBSET-MISSING	vs/nodr-vs
+DR-HOST-DUP	dr/drdup-a,dr/drdup-b
+DR-HOST-DUP	dr/drpol-lb,dr/drpol-tls
+DR-HOST-DUP	dr/drsub-a,dr/drsub-b
+DR-POLICY-CONFLICT	dr/drpol-lb,dr/drpol-tls
+DR-SUBSET-DUP	dr/drsub-a,dr/drsub-b
+DR-HOST-WILDCARD	dr/drwild-all,dr/drwild-api
+DR-SUBSET-LABELS	dr/drlabel-dr

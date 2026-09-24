@@ -1,0 +1,35 @@
+# VS-GW-MERGE + VS-GW-SHADOW: blog-main hat einen Catch-All, blog-admin eine
+# /admin-Route fuer denselben Host am selben Gateway. Kommt blog-main im Merge
+# zuerst, ist /admin nie erreichbar.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: blog-main
+  namespace: vstest
+spec:
+  hosts:
+    - blog.vstest.local
+  gateways:
+    - vstest-gw
+  http:
+    - route:
+        - destination:
+            host: blog
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: blog-admin
+  namespace: vstest
+spec:
+  hosts:
+    - blog.vstest.local
+  gateways:
+    - vstest-gw
+  http:
+    - match:
+        - uri:
+            prefix: /admin
+      route:
+        - destination:
+            host: blog-admin

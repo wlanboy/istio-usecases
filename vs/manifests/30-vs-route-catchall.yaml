@@ -1,0 +1,22 @@
+# VS-ROUTE-SHADOWED: Catch-All-Route steht vor der Header-Route.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: route-catchall
+  namespace: vstest
+spec:
+  hosts:
+    - catchall-svc
+  http:
+    - name: default
+      route:
+        - destination:
+            host: catchall-svc
+    - name: debug
+      match:
+        - headers:
+            x-debug:
+              exact: "1"
+      route:
+        - destination:
+            host: catchall-debug
