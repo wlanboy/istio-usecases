@@ -43,6 +43,13 @@ python3 virtualservice.py <namespace> --context kind-local
 python3 virtualservice.py <namespace> --file manifests/   # lokale YAML-Dateien statt Cluster
 ```
 
+`virtualservice_cluster.py` ist eine Kopie ohne `--file`. Sie liest nur aus
+dem Cluster und braucht kein PyYAML:
+
+```bash
+python3 virtualservice_cluster.py <namespace> [--context kind-local]
+```
+
 Intern ausgeführter Befehl (ohne `--file`):
 
 ```bash
