@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Zeigt fuer einen Namespace, was per Istio exponiert ist: Gateways, Hosts,
 VirtualServices, DestinationRules (inkl. TLS), ServiceEntries, PeerAuthentication
-und den Sidecar-Sync-Status. Nutzt nur die Python-Standardbibliothek (ab 3.9) und
-ruft `kubectl` (oder `oc`) und `istioctl` als externe Befehle auf.
+und den Sidecar-Sync-Status. Variante ohne istioctl: nutzt nur die
+Python-Standardbibliothek (ab 3.9) und `kubectl` oder `oc`. Der Sync-Status wird per
+`exec` in jedem istiod-Pod ueber `pilot-discovery request GET /debug/syncz` gelesen
+(benoetigt RBAC-Recht `pods/exec` im istiod-Namespace).
 
 Verwendung:
-    python3 istio-inspect.py <namespace> [--context CONTEXT] [--cli kubectl|oc] [--no-analyze]
+    python3 istio-inspect-kubectl.py <namespace> [--context CONTEXT] [--cli kubectl|oc]
+                                     [--istio-namespace istio-system]
 """
 
 import argparse
@@ -192,15 +195,55 @@ def route_rows(rt: dict):
 
 # --- Sektionen ohne Tabelle --------------------------------------------
 
-def section_proxy_status(result: tuple[int, str, str], namespace: str) -> None:
-    print_header("istioctl proxy-status (Sync mit istiod)")
-    rc, out, err = result
-    if rc != 0:
-        print(f"  Fehler: {(err or out).strip()}")
+XDS_TYPES = (("CDS", "cluster"), ("LDS", "listener"), ("EDS", "endpoint"), ("RDS", "route"))
+
+
+def xds_status(entry: dict, prefix: str) -> str:
+    """Gleiche Logik wie istioctl proxy-status: gesendet == bestaetigt -> SYNCED."""
+    sent = entry.get(f"{prefix}_sent", "")
+    if not sent:
+        return "NOT SENT"
+    return "SYNCED" if sent == entry.get(f"{prefix}_acked", "") else "STALE"
+
+
+def fetch_syncz(kubectl: list[str], istio_namespace: str) -> Result:
+    """Fragt jeden laufenden istiod-Pod ab - jeder kennt nur die bei ihm verbundenen Proxys.
+    Der Service-Port 15014 verlangt in neueren Istio-Versionen Auth, daher per exec."""
+    pods, err = kubectl_json(kubectl, "pods", istio_namespace, "-l", "app=istiod")
+    if err:
+        return [], err
+    names = [p["metadata"]["name"] for p in pods if p.get("status", {}).get("phase") == "Running"]
+    if not names:
+        return [], f"kein laufender istiod-Pod (app=istiod) in Namespace {istio_namespace}"
+    entries, errors = [], []
+    for name in names:
+        rc, out, err = run(kubectl + ["exec", "-n", istio_namespace, name, "--",
+                                      "pilot-discovery", "request", "GET", "/debug/syncz"])
+        try:
+            if rc != 0:
+                raise ValueError((err or out).strip())
+            entries += [dict(e, istiod=name) for e in json.loads(out) or []]
+        except ValueError as e:  # JSONDecodeError ist eine Unterklasse
+            errors.append(f"{name}: {e}")
+    return entries, "; ".join(errors) if errors and not entries else None
+
+
+def section_proxy_status(result: Result, namespace: str) -> None:
+    print_header("Proxy-Sync-Status (istiod /debug/syncz)")
+    items, err = result
+    if err:
+        print(f"  Fehler: {err}")
         return
-    lines = [l for l in out.splitlines() if f".{namespace} " in l or l.startswith("NAME")]
-    if len(lines) > 1:
-        print_indented("\n".join(lines))
+    rows = []
+    for entry in items:
+        proxy = entry.get("proxy", "")
+        if not proxy.endswith(f".{namespace}"):
+            continue
+        rows.append([proxy, entry.get("cluster_id", "-"), entry["istiod"],
+                     *(xds_status(entry, prefix) for _, prefix in XDS_TYPES),
+                     entry.get("istio_version", "-")])
+    if rows:
+        print_table(["NAME", "CLUSTER", "ISTIOD", *(t for t, _ in XDS_TYPES), "VERSION"], rows)
     else:
         print("  (keine Proxys in diesem Namespace gefunden)")
 
@@ -237,39 +280,25 @@ def section_exposure_summary(namespace: str, gateways: list, virtualservices: li
         print("  (kein Ingress-Gateway, keine Route und kein LoadBalancer/NodePort-Service gefunden)")
 
 
-def section_analyze(result: tuple[int, str, str]) -> None:
-    print_header("istioctl analyze")
-    _, out, err = result
-    # analyze schreibt Meldungen teils nach stderr und endet bei Befunden mit rc != 0
-    text = (out + err).strip()
-    if text:
-        print_indented(text)
-    else:
-        print("  keine Probleme gefunden")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("namespace", help="zu untersuchender Kubernetes-Namespace")
-    parser.add_argument("--context", help="kubectl/oc/istioctl Context (optional)")
+    parser.add_argument("--context", help="kubectl/oc Context (optional)")
     parser.add_argument("--cli", choices=("kubectl", "oc"), help="Kubernetes-CLI (Default: kubectl, sonst oc)")
-    parser.add_argument("--no-analyze", action="store_true", help="istioctl analyze ueberspringen (kann dauern)")
+    parser.add_argument("--istio-namespace", default="istio-system", help="Namespace von istiod (Default: istio-system)")
     args = parser.parse_args()
     ns = args.namespace
 
     cli = detect_cli(args.cli)
-    for binary in (cli, "istioctl"):
-        if not shutil.which(binary):
-            print(f"Warnung: '{binary}' nicht im PATH gefunden.", file=sys.stderr)
+    if not shutil.which(cli):
+        print(f"Warnung: '{cli}' nicht im PATH gefunden.", file=sys.stderr)
 
     kubectl = with_context(cli, args.context)
-    istioctl = with_context("istioctl", args.context)
 
     # Alle Abfragen parallel starten, Ausgabe erfolgt danach in fester Reihenfolge
-    with ThreadPoolExecutor(max_workers=len(RESOURCES) + 2) as pool:
+    with ThreadPoolExecutor(max_workers=len(RESOURCES) + 1) as pool:
         futures = {key: pool.submit(kubectl_json, kubectl, res, ns) for key, res in RESOURCES.items()}
-        proxy_future = pool.submit(run, istioctl + ["proxy-status"])
-        analyze_future = None if args.no_analyze else pool.submit(run, istioctl + ["analyze", "-n", ns])
+        syncz_future = pool.submit(fetch_syncz, kubectl, args.istio_namespace)
         data = {key: f.result() for key, f in futures.items()}
 
         print("=" * 60)
@@ -278,7 +307,7 @@ def main() -> None:
 
         print_section("Pods & Sidecar-Status", data["pods"],
                       ["NAME", "READY", "SIDECAR"], pod_rows)
-        section_proxy_status(proxy_future.result(), ns)
+        section_proxy_status(syncz_future.result(), ns)
         print_section("Services", data["services"],
                       ["NAME", "TYPE", "CLUSTER-IP", "PORTS", "SELECTOR"], service_rows)
         print_section("Gateways", data["gateways"],
@@ -298,8 +327,6 @@ def main() -> None:
                           ["NAME", "HOST", "PATH", "ZIEL", "TLS"], route_rows)
         section_exposure_summary(ns, data["gateways"][0], data["virtualservices"][0], data["services"][0],
                                  data["routes"][0])
-        if analyze_future:
-            section_analyze(analyze_future.result())
 
 
 if __name__ == "__main__":
