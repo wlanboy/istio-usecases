@@ -9,11 +9,16 @@ Geprueft wird:
   VS-GW-SHADOW         beim Gateway-Merge kann eine Route eine Route des anderen VS verdecken
   VS-ROUTE-SHADOWED    Route innerhalb eines VS ist durch eine fruehere Route nie erreichbar
   VS-SUBSET-MISSING    VS verweist auf ein Subset, das keine DestinationRule definiert
+  VS-DEST-MISSING      Ziel-Host eines VS existiert nicht (weder Service noch ServiceEntry)
+  VS-DEST-PORT         Ziel-Port fehlt (Gateway, Service mit mehreren Ports) oder existiert nicht
+  VS-GW-MISSING        VS verweist auf ein Gateway, das es nicht gibt
+  VS-GW-HOST           Host eines VS ist in servers.hosts des Gateways nicht freigegeben
   DR-HOST-DUP          mehrere DestinationRules fuer denselben Host (werden gemerged)
   DR-POLICY-CONFLICT   mehrere dieser DestinationRules setzen eine trafficPolicy (nur die aelteste greift)
   DR-SUBSET-DUP        derselbe Subset-Name ist fuer einen Host mehrfach definiert
   DR-HOST-WILDCARD     Wildcard-DestinationRule wird fuer einen Host von einer konkreten DR ersetzt
   DR-SUBSET-LABELS     zwei Subsets eines Hosts selektieren exakt dieselben Labels
+  DR-SUBSET-NOPODS     Subset selektiert keinen Pod des Service
 
 Nutzt nur die Python-Standardbibliothek und ruft `kubectl` auf. Mit --file
 werden stattdessen lokale YAML-Manifeste gelesen (benoetigt PyYAML).
@@ -29,14 +34,19 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import permutations
 from typing import NoReturn
 
 ERROR = "ERROR"
 WARN = "WARN"
 
-KIND_SHORT = {"VirtualService": "vs", "DestinationRule": "dr"}
+KIND_SHORT = {"VirtualService": "vs", "DestinationRule": "dr", "Gateway": "gw",
+              "ServiceEntry": "se", "Service": "svc"}
+# Workloads, deren Pod-Template bei --file als Pod zaehlt (fuer DR-SUBSET-NOPODS).
+WORKLOAD_KINDS = ("Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob")
+ISTIO_RESOURCES = ",".join(f"{r}.networking.istio.io" for r in
+                           ("virtualservices", "destinationrules", "gateways", "serviceentries"))
 
 
 # --- Laden ---------------------------------------------------------------
@@ -45,6 +55,20 @@ def die(message) -> NoReturn:
     """Beendet mit Exit-Code 2, damit Ladefehler nicht wie ERROR-Befunde (1) aussehen."""
     print(message, file=sys.stderr)
     sys.exit(2)
+
+
+def hint(message):
+    print(f"Hinweis: {message}", file=sys.stderr)
+
+
+@dataclass
+class Source:
+    """Die geladenen Objekte und welche Arten vollstaendig bekannt sind. Pruefungen,
+    die ein fehlendes Objekt melden, laufen nur fuer tatsaechlich gelesene Arten."""
+    items: list
+    services_known: bool = False      # Services und ServiceEntries des Namespace
+    pods_known: bool = False
+    gateway_namespaces: set = field(default_factory=set)
 
 
 def run(cmd):
@@ -57,16 +81,131 @@ def run(cmd):
     return result.stdout, None
 
 
-def load_from_cluster(namespace, context):
-    cmd = ["kubectl"]
-    if context:
-        cmd += ["--context", context]
-    cmd += ["get", "virtualservices.networking.istio.io,destinationrules.networking.istio.io",
-            "-n", namespace, "-o", "json"]
-    out, err = run(cmd)
+def kubectl(context, *args):
+    return run(["kubectl"] + (["--context", context] if context else []) + list(args))
+
+
+def kubectl_items(context, resources, namespace):
+    out, err = kubectl(context, "get", resources, "-n", namespace, "-o", "json")
     if out is None:
+        return None, err
+    try:
+        return json.loads(out).get("items", []), None
+    except json.JSONDecodeError as e:
+        return None, f"ungueltige JSON-Ausgabe von kubectl: {e}"
+
+
+def is_vs_or_dr(item):
+    return item.get("kind") in ("VirtualService", "DestinationRule")
+
+
+def gateway_namespaces_of(items, namespace):
+    """Die Namespaces aller Gateways, auf die VirtualServices verweisen."""
+    for item in items:
+        if item.get("kind") == "VirtualService":
+            for gw in item.get("spec", {}).get("gateways") or []:
+                if gw != "mesh":
+                    yield gw.split("/", 1)[0] if "/" in gw else namespace
+
+
+def load_from_cluster(namespace, context):
+    items, err = kubectl_items(context, ISTIO_RESOURCES, namespace)
+    if items is None:
         die(f"Fehler beim Lesen aus dem Cluster: {err}")
-    return json.loads(out).get("items", [])
+    if not any(is_vs_or_dr(i) for i in items):
+        # kubectl meldet fuer einen unbekannten Namespace keinen Fehler, sondern eine
+        # leere Liste. Ohne diese Pruefung waere ein Tippfehler ein gruener CI-Lauf.
+        _, err = kubectl(context, "get", "namespace", namespace, "-o", "name")
+        if err and "notfound" in err.replace(" ", "").lower():
+            die(f"Namespace {namespace} existiert nicht")
+    source = Source(items, gateway_namespaces={namespace})
+
+    # Services und Pods sind optional: fehlen die Rechte, entfallen nur die Pruefungen darauf.
+    services, err = kubectl_items(context, "services", namespace)
+    if services is None:
+        hint(f"Services nicht lesbar: {err}")
+    else:
+        items += services
+        source.services_known = True
+    pods, err = kubectl_items(context, "pods", namespace)
+    if pods is None:
+        hint(f"Pods nicht lesbar: {err}")
+    else:
+        # Beendete Pods (z.B. von Jobs) liefern keine Endpunkte mehr.
+        items += [p for p in pods
+                  if p.get("status", {}).get("phase") not in ("Succeeded", "Failed")]
+        source.pods_known = True
+
+    # Gateways aus anderen Namespaces (z.B. istio-system/ingress), auf die verwiesen wird.
+    for ns in sorted(set(gateway_namespaces_of(items, namespace)) - {namespace}):
+        gateways, err = kubectl_items(context, "gateways.networking.istio.io", ns)
+        if gateways is None:
+            hint(f"Gateways in Namespace {ns} nicht lesbar: {err}")
+        else:
+            items += gateways
+            source.gateway_namespaces.add(ns)
+    return source
+
+
+def yaml_files(paths):
+    files = []
+    for path in paths:
+        if os.path.isdir(path):
+            files += sorted(os.path.join(path, f) for f in os.listdir(path)
+                            if f.endswith((".yaml", ".yml")))
+        elif os.path.isfile(path):
+            files.append(path)
+        else:
+            die(f"Datei oder Verzeichnis nicht gefunden: {path}")
+    return files
+
+
+def k8s_objects(doc):
+    """Die Kubernetes-Objekte eines YAML-Dokuments; `kind: List` (z.B. aus
+    `kubectl get -o yaml`) wird aufgeloest, andere Dokumente werden ignoriert."""
+    if not isinstance(doc, dict):
+        return
+    if doc.get("kind") == "List":
+        for item in doc.get("items") or []:
+            yield from k8s_objects(item)
+    elif isinstance(doc.get("kind"), str):
+        yield doc
+
+
+def pod_template_labels(obj):
+    spec = obj.get("spec") or {}
+    if obj["kind"] == "Pod":
+        return obj["metadata"].get("labels") or {}
+    if obj["kind"] == "CronJob":
+        spec = (spec.get("jobTemplate") or {}).get("spec") or {}
+    return ((spec.get("template") or {}).get("metadata") or {}).get("labels") or {}
+
+
+def add_file_object(source, obj, namespace, path):
+    kind = obj["kind"]
+    # Nur core/v1-Services; z.B. Knative-Services haben ebenfalls kind: Service.
+    if kind == "Service" and obj.get("apiVersion") != "v1":
+        return
+    if kind not in KIND_SHORT and kind not in WORKLOAD_KINDS:
+        return
+    meta = obj.get("metadata")
+    if not isinstance(meta, dict) or not meta.get("name"):
+        die(f"{path}: {kind} ohne metadata.name")
+    # Manifeste ohne Namespace landen wie bei `kubectl apply -n` im Ziel-Namespace.
+    meta.setdefault("namespace", namespace)
+    if kind == "Gateway":
+        # Gateways werden auch aus anderen Namespaces gebraucht (Verweis <ns>/<gateway>).
+        source.items.append(obj)
+        source.gateway_namespaces.add(meta["namespace"])
+    elif meta["namespace"] != namespace:
+        return
+    elif kind in WORKLOAD_KINDS:
+        source.items.append({"kind": "Pod", "metadata": {
+            "name": meta["name"], "namespace": namespace, "labels": pod_template_labels(obj)}})
+        source.pods_known = True
+    else:
+        source.services_known |= kind in ("Service", "ServiceEntry")
+        source.items.append(obj)
 
 
 def load_from_files(paths, namespace):
@@ -74,26 +213,24 @@ def load_from_files(paths, namespace):
         import yaml
     except ImportError:
         die("--file benoetigt PyYAML (pip install pyyaml)")
-    files = []
-    for path in paths:
-        if os.path.isdir(path):
-            files += sorted(os.path.join(path, f) for f in os.listdir(path)
-                            if f.endswith((".yaml", ".yml")))
-        else:
-            files.append(path)
-    items = []
-    for f in files:
-        with open(f) as fh:
-            # Eine Datei kann mehrere Dokumente (---) enthalten; nur VS/DR sind relevant.
-            for doc in yaml.safe_load_all(fh):
-                if not doc or doc.get("kind") not in KIND_SHORT:
-                    continue
-                # Manifeste ohne Namespace landen wie bei `kubectl apply -n` im Ziel-Namespace.
-                meta = doc.setdefault("metadata", {})
-                meta.setdefault("namespace", namespace)
-                if meta["namespace"] == namespace:
-                    items.append(doc)
-    return items
+    source = Source([])
+    for path in yaml_files(paths):
+        try:
+            with open(path) as fh:
+                # Eine Datei kann mehrere Dokumente (---) enthalten.
+                docs = list(yaml.safe_load_all(fh))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
+            die(f"Fehler beim Lesen von {path}: {e}")
+        for doc in docs:
+            for obj in k8s_objects(doc):
+                add_file_object(source, obj, namespace, path)
+    # Wie im Cluster: gibt es Services, aber keine Workloads dazu, hat der Service
+    # keine Pods. Ohne Services entfaellt DR-SUBSET-NOPODS ohnehin.
+    source.pods_known |= source.services_known
+    if not any(is_vs_or_dr(i) for i in source.items):
+        die(f"Keine VirtualServices oder DestinationRules fuer Namespace {namespace} "
+            f"in {', '.join(paths)} gefunden")
+    return source
 
 
 # --- Hilfsfunktionen: Hosts & Gateways -----------------------------------
@@ -146,13 +283,21 @@ class Route:
     catch_all: bool   # die Route hat gar keine match-Liste
 
 
+@dataclass(frozen=True)
+class Destination:
+    host: str         # FQDN
+    subset: str       # leer ohne Subset
+    port: object      # Portnummer oder None
+
+
 @dataclass(eq=False)
 class VirtualService:
     ref: str          # "vs/<name>"
+    namespace: str
     hosts: list       # FQDNs
     gateways: list    # "<namespace>/<name>" oder "mesh"
     routes: list      # http-Routen als Route, in Auswertungsreihenfolge
-    subset_refs: list  # (host, subset) aller Ziele, die ein Subset verwenden
+    destinations: list  # alle Ziele (Destination) aus http, tcp und tls inkl. mirror
 
 
 @dataclass(eq=False)
@@ -162,6 +307,31 @@ class DestinationRule:
     selector: str     # workloadSelector als sortiertes JSON, damit vergleichbar
     subsets: list
     has_policy: bool
+
+
+@dataclass(eq=False)
+class Service:
+    ref: str          # "svc/<name>"
+    host: str         # FQDN
+    selector: dict    # leer bei Services ohne Selector (Endpoints manuell gepflegt)
+    ports: list       # Portnummern
+
+
+@dataclass(eq=False)
+class Gateway:
+    ref: str          # "gw/<name>", aus anderen Namespaces "gw/<namespace>/<name>"
+    namespace: str
+    hosts: list       # (Namespace-Teil, Host) aus servers[].hosts
+
+    def admits(self, host, vs_namespace):
+        """True, wenn ein Server des Gateways host fuer VirtualServices aus
+        vs_namespace freigibt. "ns/host" beschraenkt auf VS aus ns, "." auf den
+        Namespace des Gateways, "*" oder ohne Praefix gilt fuer alle."""
+        for ns, gw_host in self.hosts:
+            allowed = ns in ("*", vs_namespace) or (ns == "." and vs_namespace == self.namespace)
+            if allowed and hosts_overlap(gw_host, host):
+                return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -209,12 +379,14 @@ def parse_vs(item):
     spec = item.get("spec", {})
     return VirtualService(
         ref=ref(item),
+        namespace=ns,
         hosts=[fqdn(h, ns) for h in spec.get("hosts") or []],
         # Ohne spec.gateways gilt ein VirtualService implizit nur fuer "mesh" (Sidecars).
         gateways=[norm_gateway(g, ns) for g in spec.get("gateways") or ["mesh"]],
         routes=[parse_route(r, i, ns) for i, r in enumerate(spec.get("http") or [])],
-        subset_refs=[(fqdn(d["host"], ns), d["subset"]) for d in vs_destinations(spec)
-                     if d.get("host") and d.get("subset")],
+        destinations=[Destination(fqdn(d["host"], ns), d.get("subset") or "",
+                                  (d.get("port") or {}).get("number"))
+                      for d in vs_destinations(spec) if d.get("host")],
     )
 
 
@@ -230,13 +402,54 @@ def parse_dr(item):
     )
 
 
-class Config:
-    """Alle VS/DR eines Namespace plus die Gruppierungen, die die Pruefungen brauchen."""
+def parse_service(item):
+    ns = item["metadata"]["namespace"]
+    spec = item.get("spec", {})
+    return Service(
+        ref=ref(item),
+        host=fqdn(item["metadata"]["name"], ns),
+        selector=spec.get("selector") or {},
+        ports=[p["port"] for p in spec.get("ports") or [] if p.get("port")],
+    )
 
-    def __init__(self, namespace, items):
+
+def parse_gateway(item, namespace):
+    ns = item["metadata"]["namespace"]
+    hosts = []
+    for server in item.get("spec", {}).get("servers") or []:
+        for host in server.get("hosts") or []:
+            hosts.append(tuple(host.split("/", 1)) if "/" in host else ("*", host))
+    name = item["metadata"]["name"]
+    return Gateway(ref=f"gw/{name}" if ns == namespace else f"gw/{ns}/{name}",
+                   namespace=ns, hosts=hosts)
+
+
+def by_kind(items, kind):
+    return [i for i in items if i.get("kind") == kind]
+
+
+class Config:
+    """Alle VS/DR eines Namespace, die Objekte, auf die sie verweisen, und die
+    Gruppierungen, die die Pruefungen brauchen."""
+
+    def __init__(self, namespace, source):
         self.namespace = namespace
-        self.vss = [parse_vs(i) for i in items if i.get("kind") == "VirtualService"]
-        self.drs = [parse_dr(i) for i in items if i.get("kind") == "DestinationRule"]
+        self.local_suffix = f".{namespace}.svc.cluster.local"
+        items = source.items
+        self.vss = [parse_vs(i) for i in by_kind(items, "VirtualService")]
+        self.drs = [parse_dr(i) for i in by_kind(items, "DestinationRule")]
+
+        self.services_known = source.services_known
+        self.pods_known = source.pods_known
+        self.gateway_namespaces = source.gateway_namespaces
+        # FQDN -> Service, "<namespace>/<name>" -> Gateway
+        self.services = {s.host: s for s in map(parse_service, by_kind(items, "Service"))}
+        self.se_hosts = [fqdn(h, i["metadata"]["namespace"])
+                         for i in by_kind(items, "ServiceEntry")
+                         for h in i.get("spec", {}).get("hosts") or []]
+        self.gateways = {f"{i['metadata']['namespace']}/{i['metadata']['name']}":
+                         parse_gateway(i, namespace) for i in by_kind(items, "Gateway")}
+        self.pod_labels = [i["metadata"].get("labels") or {} for i in by_kind(items, "Pod")]
 
         # (gateway, host) -> VirtualServices; ein VS zaehlt pro Gruppe nur einmal.
         self.vs_by_binding = {}
@@ -253,6 +466,12 @@ class Config:
         for dr in self.drs:
             if dr.host:
                 self.dr_by_host.setdefault((dr.host, dr.selector), []).append(dr)
+
+    def is_local(self, host):
+        return host.endswith(self.local_suffix)
+
+    def host_exists(self, host):
+        return host in self.services or any(hosts_overlap(h, host) for h in self.se_hosts)
 
     def drs_for_host(self, host):
         """Die DRs, die Istio fuer host verwendet: die mit exakt diesem Host, sonst
@@ -329,8 +548,8 @@ def match_covers(ma, mb):
     von mb mindestens gleich streng erfuellt werden."""
     if not uri_covers(ma, mb):
         return False
-    for field in ("scheme", "method", "authority"):
-        if not string_covers(ma.get(field), mb.get(field)):
+    for attr in ("scheme", "method", "authority"):
+        if not string_covers(ma.get(attr), mb.get(attr)):
             return False
     if not map_covers(ma.get("headers"), mb.get("headers")):
         return False
@@ -340,8 +559,8 @@ def match_covers(ma, mb):
     for key, cond in (ma.get("withoutHeaders") or {}).items():
         if (mb.get("withoutHeaders") or {}).get(key) != cond:
             return False
-    for field in ("port", "sourceNamespace"):
-        if field in ma and ma[field] != mb.get(field):
+    for attr in ("port", "sourceNamespace"):
+        if attr in ma and ma[attr] != mb.get(attr):
             return False
     labels_b = mb.get("sourceLabels") or {}
     if any(labels_b.get(k) != v for k, v in (ma.get("sourceLabels") or {}).items()):
@@ -358,6 +577,19 @@ def route_covers(ra, rb):
     # Mehrere Matches einer Route sind ODER-verknuepft: jeder Match von rb muss
     # von mindestens einem Match von ra abgedeckt sein.
     return all(any(match_covers(ma, mb) for ma in ra.matches) for mb in rb.matches)
+
+
+def routes_at(routes, gw):
+    """Die Routen, wie sie an Gateway gw gelten: Matches, die per match.gateways auf
+    andere Gateways beschraenkt sind, entfallen; Routen ohne verbleibenden Match
+    gelten dort gar nicht."""
+    result = []
+    for route in routes:
+        matches = [{k: v for k, v in m.items() if k != "gateways"} for m in route.matches
+                   if not m.get("gateways") or gw in m["gateways"]]
+        if matches:
+            result.append(Route(route.label, matches, route.catch_all))
+    return result
 
 
 def first_covering(routes, route):
@@ -399,8 +631,8 @@ def check_vs_gw_shadow(cfg):
         # Am Gateway werden die Routen aneinandergehaengt. Da die Reihenfolge der VS
         # nicht feststeht, wird jedes Paar in beiden Richtungen (a vor b, b vor a) geprueft.
         for a, b in permutations(group, 2):
-            for rb in b.routes:
-                ra = first_covering(a.routes, rb)
+            for rb in routes_at(b.routes, gw):
+                ra = first_covering(routes_at(a.routes, gw), rb)
                 if ra is not None:
                     yield finding(ERROR, "VS-GW-SHADOW", [a.ref, b.ref],
                                   f"Host {host} an Gateway {gw}: Route {rb.label} in {b.ref} "
@@ -440,14 +672,13 @@ def check_vs_route_shadowed(cfg):
 
 
 def check_vs_subset_missing(cfg):
-    local_suffix = f".{cfg.namespace}.svc.cluster.local"
     for vs in cfg.vss:
-        for host, subset in vs.subset_refs:
+        for host, subset in sorted({(d.host, d.subset) for d in vs.destinations if d.subset}):
             drs = cfg.drs_for_host(host)
             if not drs:
                 # Fuer Hosts ausserhalb des Namespace kann die DR woanders liegen,
                 # daher wird nur bei lokalen Services ein Fehler gemeldet.
-                if host.endswith(local_suffix):
+                if cfg.is_local(host):
                     yield finding(ERROR, "VS-SUBSET-MISSING", [vs.ref],
                                   f"Subset '{subset}' fuer {host} referenziert, aber es gibt "
                                   f"keine DestinationRule fuer diesen Host")
@@ -457,6 +688,78 @@ def check_vs_subset_missing(cfg):
                 yield finding(ERROR, "VS-SUBSET-MISSING", [vs.ref] + [dr.ref for dr in drs],
                               f"Subset '{subset}' fuer {host} ist in keiner DestinationRule "
                               f"definiert (vorhanden: {', '.join(sorted(defined)) or '-'})")
+
+
+def check_vs_dest_missing(cfg):
+    # Ohne Service oder ServiceEntry gibt es fuer den Host keinen Cluster: 503 (NR).
+    # Hosts ausserhalb des Namespace koennen anderswo definiert sein und werden
+    # daher nicht geprueft.
+    if not cfg.services_known:
+        return
+    for vs in cfg.vss:
+        for host in sorted({d.host for d in vs.destinations}):
+            if cfg.is_local(host) and not cfg.host_exists(host):
+                yield finding(ERROR, "VS-DEST-MISSING", [vs.ref],
+                              f"Ziel-Host {host} existiert nicht: weder Service noch "
+                              f"ServiceEntry im Namespace (IST0101)")
+
+
+def check_vs_dest_port(cfg):
+    if not cfg.services_known:
+        return
+    for vs in cfg.vss:
+        # Am Sidecar ergibt sich der Port ohne Angabe aus dem Listener, also dem
+        # Service-Port selbst. Am Gateway ist das der Gateway-Port (z.B. 80), den
+        # ein Service mit mehreren Ports meist nicht hat.
+        at_gateway = any(gw != "mesh" for gw in vs.gateways)
+        for d in sorted(set(vs.destinations), key=lambda d: (d.host, d.port or 0)):
+            svc = cfg.services.get(d.host)
+            if svc is None:
+                continue
+            ports = ", ".join(map(str, svc.ports)) or "-"
+            if d.port is None:
+                if at_gateway and len(svc.ports) > 1:
+                    yield finding(ERROR, "VS-DEST-PORT", [vs.ref, svc.ref],
+                                  f"Ziel {d.host} hat mehrere Ports ({ports}), aber "
+                                  f"destination.port fehlt; am Gateway ist das Ziel "
+                                  f"mehrdeutig (IST0112)")
+            elif d.port not in svc.ports:
+                yield finding(ERROR, "VS-DEST-PORT", [vs.ref, svc.ref],
+                              f"Ziel {d.host}: Port {d.port} gibt es im Service nicht "
+                              f"(vorhanden: {ports})")
+
+
+def check_vs_gw_missing(cfg):
+    # Gemeldet wird nur, wenn die Gateways des Ziel-Namespace gelesen werden konnten.
+    for vs in cfg.vss:
+        for gw in vs.gateways:
+            if gw == "mesh" or gw in cfg.gateways:
+                continue
+            if gw.split("/", 1)[0] in cfg.gateway_namespaces:
+                yield finding(ERROR, "VS-GW-MISSING", [vs.ref],
+                              f"Gateway {gw} existiert nicht; der VirtualService wird "
+                              f"dort nicht angewendet (IST0101)")
+
+
+def check_vs_gw_host(cfg):
+    # Ein Gateway nimmt nur Hosts an, die ein Server in servers[].hosts freigibt.
+    # Alle anderen Hosts des VS ignoriert es an diesem Gateway ohne Fehlermeldung.
+    for vs in cfg.vss:
+        for key in vs.gateways:
+            gw = cfg.gateways.get(key)
+            if gw is None:
+                continue
+            missing = [h for h in vs.hosts if not gw.admits(h, vs.namespace)]
+            if missing and len(missing) == len(vs.hosts):
+                yield finding(ERROR, "VS-GW-HOST", [vs.ref, gw.ref],
+                              f"Keiner der Hosts ({', '.join(missing)}) ist in Gateway {key} "
+                              f"freigegeben; der VirtualService wird dort ignoriert (IST0132)")
+            elif "mesh" not in vs.gateways:
+                # Mit mesh sind Hosts, die nur fuer die Sidecars gedacht sind, normal.
+                for host in missing:
+                    yield finding(WARN, "VS-GW-HOST", [vs.ref, gw.ref],
+                                  f"Host {host} ist in Gateway {key} nicht freigegeben und "
+                                  f"wird dort ignoriert (IST0132)")
 
 
 # --- Pruefungen: DestinationRules -----------------------------------------
@@ -530,6 +833,43 @@ def check_dr_host_wildcard(cfg):
                                   f"{b.ref} ersetzt sie dort vollstaendig (kein Merge)")
 
 
+def labels_match(labels, selector):
+    return all(labels.get(k) == v for k, v in selector.items())
+
+
+def check_dr_subset_nopods(cfg):
+    # Ein Pod gehoert zum Subset, wenn er den Selector des Service UND die
+    # Subset-Labels traegt. Ohne solche Pods hat der Subset-Cluster keine
+    # Endpunkte: Requests darauf enden mit 503 (UH).
+    if not (cfg.services_known and cfg.pods_known):
+        return
+    users = {}
+    for vs in cfg.vss:
+        for d in vs.destinations:
+            if d.subset:
+                users.setdefault((d.host, d.subset), set()).add(vs.ref)
+    for dr in cfg.drs:
+        svc = cfg.services.get(dr.host)
+        # Ohne Selector werden die Endpoints manuell gepflegt, Pods sagen dann nichts aus.
+        if svc is None or not svc.selector:
+            continue
+        for subset in dr.subsets:
+            name, labels = subset.get("name"), subset.get("labels") or {}
+            if any(labels_match(p, svc.selector) and labels_match(p, labels)
+                   for p in cfg.pod_labels):
+                continue
+            label_text = json.dumps(labels, sort_keys=True)
+            vss = sorted(users.get((dr.host, name), ()))
+            if vss:
+                yield finding(ERROR, "DR-SUBSET-NOPODS", [dr.ref, svc.ref] + vss,
+                              f"Host {dr.host}: Subset '{name}' {label_text} selektiert keinen "
+                              f"Pod; Requests von {', '.join(vss)} darauf enden mit 503")
+            else:
+                yield finding(WARN, "DR-SUBSET-NOPODS", [dr.ref, svc.ref],
+                              f"Host {dr.host}: Subset '{name}' {label_text} selektiert keinen "
+                              f"Pod (wird von keinem VirtualService verwendet)")
+
+
 CHECKS = [
     check_vs_host_dup,
     check_vs_host_wildcard,
@@ -537,11 +877,16 @@ CHECKS = [
     check_vs_gw_shadow,
     check_vs_route_shadowed,
     check_vs_subset_missing,
+    check_vs_dest_missing,
+    check_vs_dest_port,
+    check_vs_gw_missing,
+    check_vs_gw_host,
     check_dr_host_dup,
     check_dr_policy_conflict,
     check_dr_subset_dup,
     check_dr_host_wildcard,
     check_dr_subset_labels,
+    check_dr_subset_nopods,
 ]
 
 
@@ -567,6 +912,19 @@ def print_table(findings):
     print(f"{len(findings)} Befund(e), davon {errors} Fehler")
 
 
+def report_skipped(cfg):
+    """Nennt Pruefungen, die mangels geladener Objekte nicht laufen konnten."""
+    if not cfg.services_known:
+        hint("keine Services/ServiceEntries geladen: VS-DEST-MISSING, VS-DEST-PORT "
+             "und DR-SUBSET-NOPODS entfallen")
+    elif not cfg.pods_known:
+        hint("keine Pods bzw. Workloads geladen: DR-SUBSET-NOPODS entfaellt")
+    unknown = {gw.split("/", 1)[0] for vs in cfg.vss for gw in vs.gateways if gw != "mesh"}
+    for ns in sorted(unknown - cfg.gateway_namespaces):
+        hint(f"keine Gateways aus Namespace {ns} geladen: Verweise dorthin werden "
+             f"nicht auf VS-GW-MISSING/VS-GW-HOST geprueft")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -577,11 +935,12 @@ def main():
     args = parser.parse_args()
 
     if args.file:
-        items = load_from_files(args.file, args.namespace)
+        source = load_from_files(args.file, args.namespace)
     else:
-        items = load_from_cluster(args.namespace, args.context)
+        source = load_from_cluster(args.namespace, args.context)
 
-    cfg = Config(args.namespace, items)
+    cfg = Config(args.namespace, source)
+    report_skipped(cfg)
     result = run_checks(cfg)
 
     print(f"Namespace {args.namespace}: {len(cfg.vss)} VirtualServices, "
