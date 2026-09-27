@@ -53,3 +53,29 @@ spec:
       route:
         - destination:
             host: root-static
+---
+# Services fuer alle Ziele (sonst VS-DEST-MISSING)
+apiVersion: v1
+kind: Service
+metadata: {name: prefix-svc}
+spec: {selector: {app: prefix-svc}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prefix-v2}
+spec: {selector: {app: prefix-v2}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prefix-health}
+spec: {selector: {app: prefix-health}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: root-svc}
+spec: {selector: {app: root-svc}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: root-static}
+spec: {selector: {app: root-static}, ports: [{name: http, port: 80}]}

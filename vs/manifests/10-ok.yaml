@@ -1,6 +1,7 @@
-# Positivfall: KEIN Befund erwartet.
+# Positivfall: kein Konflikt in der Konfiguration.
 # Die zweite Route ist allgemeiner als die erste und steht korrekt danach,
 # der Catch-All steht am Ende, alle Subsets sind definiert.
+# Da keine Pods laufen, meldet nur DR-SUBSET-NOPODS die Subsets v1 und v2.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
@@ -51,3 +52,9 @@ spec:
     - name: v2
       labels:
         version: v2
+---
+# Services fuer alle Ziele (sonst VS-DEST-MISSING)
+apiVersion: v1
+kind: Service
+metadata: {name: ok-svc}
+spec: {selector: {app: ok-svc}, ports: [{name: http, port: 80}]}

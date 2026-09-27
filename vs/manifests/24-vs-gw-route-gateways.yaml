@@ -1,0 +1,62 @@
+# VS-GW-MERGE, aber KEIN VS-GW-SHADOW: news-internal hat seine /internal-Route per
+# match.gateways auf vstest-gw2 beschraenkt. An vstest-gw gilt sie nicht, der
+# Catch-All von news-main kann sie dort also nicht verdecken.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: vstest-gw2
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 8080
+        name: http-internal
+        protocol: HTTP
+      hosts:
+        - "*.vstest.local"
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: news-main
+spec:
+  hosts:
+    - news.vstest.local
+  gateways:
+    - vstest-gw
+  http:
+    - route:
+        - destination:
+            host: news
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: news-internal
+spec:
+  hosts:
+    - news.vstest.local
+  gateways:
+    - vstest-gw
+    - vstest-gw2
+  http:
+    - match:
+        - uri:
+            prefix: /internal
+          gateways:
+            - vstest-gw2
+      route:
+        - destination:
+            host: news-internal
+---
+# Services fuer alle Ziele (sonst VS-DEST-MISSING)
+apiVersion: v1
+kind: Service
+metadata: {name: news}
+spec: {selector: {app: news}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: news-internal}
+spec: {selector: {app: news-internal}, ports: [{name: http, port: 80}]}

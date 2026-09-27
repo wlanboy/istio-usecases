@@ -56,3 +56,29 @@ spec:
       route:
         - destination:
             host: match-get
+---
+# Services fuer alle Ziele (sonst VS-DEST-MISSING)
+apiVersion: v1
+kind: Service
+metadata: {name: match-svc}
+spec: {selector: {app: match-svc}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: match-special}
+spec: {selector: {app: match-special}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: match-admin}
+spec: {selector: {app: match-admin}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: match-admin-path}
+spec: {selector: {app: match-admin-path}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: match-get}
+spec: {selector: {app: match-get}, ports: [{name: http, port: 80}]}

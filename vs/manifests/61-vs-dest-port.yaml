@@ -1,0 +1,52 @@
+# VS-DEST-PORT: port-svc hat zwei Ports (80, 9090).
+#  - port-gw-vs haengt am Gateway und gibt keinen Port an (IST0112)
+#  - port-mesh-vs gibt keinen Port an, gilt aber nur am Sidecar -> kein Befund
+#  - port-bad-vs verweist auf Port 8080, den der Service nicht hat
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: port-gw-vs
+spec:
+  hosts:
+    - port.vstest.local
+  gateways:
+    - vstest-gw
+  http:
+    - route:
+        - destination:
+            host: port-svc
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: port-mesh-vs
+spec:
+  hosts:
+    - port-svc
+  http:
+    - route:
+        - destination:
+            host: port-svc
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: port-bad-vs
+spec:
+  hosts:
+    - port-bad.vstest.local
+  http:
+    - route:
+        - destination:
+            host: port-svc
+            port:
+              number: 8080
+---
+apiVersion: v1
+kind: Service
+metadata: {name: port-svc}
+spec:
+  selector: {app: port-svc}
+  ports:
+    - {name: http, port: 80}
+    - {name: grpc, port: 9090}

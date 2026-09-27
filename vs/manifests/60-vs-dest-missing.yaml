@@ -1,0 +1,21 @@
+# VS-DEST-MISSING: ghost-vs routet auf ghost-svc und spiegelt auf ghost-mirror.
+# Fuer ghost-mirror gibt es einen Service, fuer ghost-svc weder Service noch
+# ServiceEntry -> HTTP 503 (NR).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ghost-vs
+spec:
+  hosts:
+    - ghost.vstest.local
+  http:
+    - route:
+        - destination:
+            host: ghost-svc
+      mirror:
+        host: ghost-mirror
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ghost-mirror}
+spec: {selector: {app: ghost-mirror}, ports: [{name: http, port: 80}]}

@@ -1,0 +1,42 @@
+# DR-SUBSET-NOPODS: fuer nopod-svc laufen keine Pods.
+#  - Subsets v1 und v2 werden von nopod-vs verwendet -> je ein ERROR (503)
+#  - Subset v3 wird nicht verwendet -> WARN
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: nopod-vs
+spec:
+  hosts:
+    - nopod-svc
+  http:
+    - route:
+        - destination:
+            host: nopod-svc
+            subset: v1
+          weight: 80
+        - destination:
+            host: nopod-svc
+            subset: v2
+          weight: 20
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: nopod-dr
+spec:
+  host: nopod-svc
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+    - name: v3
+      labels:
+        version: v3
+---
+apiVersion: v1
+kind: Service
+metadata: {name: nopod-svc}
+spec: {selector: {app: nopod-svc}, ports: [{name: http, port: 80}]}

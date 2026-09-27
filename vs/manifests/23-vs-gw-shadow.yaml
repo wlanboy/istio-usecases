@@ -31,3 +31,14 @@ spec:
       route:
         - destination:
             host: blog-admin
+---
+# Services fuer alle Ziele (sonst VS-DEST-MISSING)
+apiVersion: v1
+kind: Service
+metadata: {name: blog}
+spec: {selector: {app: blog}, ports: [{name: http, port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: blog-admin}
+spec: {selector: {app: blog-admin}, ports: [{name: http, port: 80}]}

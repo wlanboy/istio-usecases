@@ -1,6 +1,8 @@
 # Erwartete Befunde fuer manifests/ (unabhaengig vom Namespace)
 # Format: CODE<TAB>Ressourcen (sortiert, kommagetrennt). Ein Eintrag pro Befund.
-# 10-ok.yaml (ok-vs, ok-dr) darf in keinem Befund auftauchen.
+# 10-ok.yaml (ok-vs, ok-dr) darf nur in DR-SUBSET-NOPODS auftauchen (die Manifeste enthalten keine Pods),
+# port-mesh-vs und gwmesh-vs in keinem Befund.
+# 24: VS-GW-MERGE ja, VS-GW-SHADOW nein (Route per match.gateways auf ein anderes Gateway beschraenkt).
 VS-HOST-DUP	vs/dup-a,vs/dup-b,vs/dup-c
 VS-HOST-WILDCARD	vs/wild-all,vs/wild-specific
 VS-GW-MERGE	vs/shop-cart,vs/shop-checkout
@@ -22,3 +24,17 @@ DR-POLICY-CONFLICT	dr/drpol-lb,dr/drpol-tls
 DR-SUBSET-DUP	dr/drsub-a,dr/drsub-b
 DR-HOST-WILDCARD	dr/drwild-all,dr/drwild-api
 DR-SUBSET-LABELS	dr/drlabel-dr
+VS-GW-MERGE	vs/news-internal,vs/news-main
+VS-DEST-MISSING	vs/ghost-vs
+VS-DEST-PORT	svc/port-svc,vs/port-gw-vs
+VS-DEST-PORT	svc/port-svc,vs/port-bad-vs
+VS-GW-MISSING	vs/gwmiss-vs
+VS-GW-HOST	gw/vstest-gw,vs/gwhost-vs
+VS-GW-HOST	gw/vstest-gw,vs/gwpart-vs
+DR-SUBSET-NOPODS	dr/nopod-dr,svc/nopod-svc,vs/nopod-vs
+DR-SUBSET-NOPODS	dr/nopod-dr,svc/nopod-svc,vs/nopod-vs
+DR-SUBSET-NOPODS	dr/nopod-dr,svc/nopod-svc
+DR-SUBSET-NOPODS	dr/ok-dr,svc/ok-svc,vs/ok-vs
+DR-SUBSET-NOPODS	dr/ok-dr,svc/ok-svc,vs/ok-vs
+DR-SUBSET-NOPODS	dr/sub-dr,svc/sub-svc,vs/sub-vs
+DR-SUBSET-NOPODS	dr/sub-dr,svc/sub-svc,vs/sub-vs

@@ -1,0 +1,69 @@
+# Gateway-Verweise ins Leere:
+#  - VS-GW-MISSING: gwmiss-vs verweist auf das nicht vorhandene Gateway ghost-gw
+#  - VS-GW-HOST (ERROR): gwhost-vs nutzt vstest-gw (*.vstest.local), aber nur mit
+#    dem Host gwhost.example.com -> der VS wird am Gateway komplett ignoriert
+#  - VS-GW-HOST (WARN): gwpart-vs hat einen passenden und einen fremden Host
+#  - gwmesh-vs hat zusaetzlich mesh und einen Kurznamen fuer die Sidecars -> kein Befund
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: gwmiss-vs
+spec:
+  hosts:
+    - gwmiss.vstest.local
+  gateways:
+    - ghost-gw
+  http:
+    - route:
+        - destination:
+            host: gw-backend
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: gwhost-vs
+spec:
+  hosts:
+    - gwhost.example.com
+  gateways:
+    - vstest-gw
+  http:
+    - route:
+        - destination:
+            host: gw-backend
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: gwpart-vs
+spec:
+  hosts:
+    - gwpart.vstest.local
+    - gwpart.example.com
+  gateways:
+    - vstest-gw
+  http:
+    - route:
+        - destination:
+            host: gw-backend
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: gwmesh-vs
+spec:
+  hosts:
+    - gwmesh.vstest.local
+    - gw-backend
+  gateways:
+    - vstest-gw
+    - mesh
+  http:
+    - route:
+        - destination:
+            host: gw-backend
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gw-backend}
+spec: {selector: {app: gw-backend}, ports: [{name: http, port: 80}]}

@@ -39,3 +39,44 @@ else
   echo "FEHLER: Abweichung zwischen erwarteten (-) und gefundenen (+) Befunden." >&2
   exit 1
 fi
+
+# Offline zusaetzlich: Ladefehler muessen Exit-Code 2 liefern, nicht 1 (= ERROR-Befunde)
+# und nicht einen Traceback.
+if (( ${#SOURCE_ARGS[@]} )); then
+  expect_rc() {
+    local want=$1 desc=$2; shift 2
+    local got=0
+    "${PYTHON[@]}" virtualservice.py "$NAMESPACE" "$@" > /dev/null 2> "$TMP/stderr.txt" || got=$?
+    if (( got != want )) || grep -q Traceback "$TMP/stderr.txt"; then
+      echo "FEHLER: $desc: Exit-Code $got statt $want" >&2
+      cat "$TMP/stderr.txt" >&2
+      exit 1
+    fi
+  }
+  printf 'kind: VirtualService\nmetadata: {name: x\n' > "$TMP/broken.yaml"
+  printf -- '- keine\n- Ressource\n' > "$TMP/scalar.yaml"
+  printf 'kind: VirtualService\nmetadata: {namespace: %s}\nspec: {hosts: [a]}\n' \
+    "$NAMESPACE" > "$TMP/noname.yaml"
+  printf 'kind: VirtualService\nmetadata: {name: x, namespace: anderer-ns}\n' > "$TMP/otherns.yaml"
+  # kind: List (wie aus kubectl get -o yaml) muss aufgeloest werden: der Catch-All
+  # vor der zweiten Route ergibt einen ERROR-Befund, also Exit-Code 1.
+  cat > "$TMP/list.yaml" <<EOF
+kind: List
+items:
+  - kind: VirtualService
+    metadata: {name: list-vs}
+    spec:
+      hosts: [list-svc]
+      http:
+        - route: [{destination: {host: list-svc}}]
+        - match: [{uri: {prefix: /a}}]
+          route: [{destination: {host: list-svc}}]
+EOF
+  expect_rc 2 "kaputtes YAML" --file "$TMP/broken.yaml"
+  expect_rc 2 "fehlende Datei" --file "$TMP/fehlt.yaml"
+  expect_rc 2 "Datei ohne VS/DR" --file "$TMP/scalar.yaml"
+  expect_rc 2 "Ressource ohne Namen" --file "$TMP/noname.yaml"
+  expect_rc 2 "nur Ressourcen eines anderen Namespace" --file "$TMP/otherns.yaml"
+  expect_rc 1 "kind: List" --file "$TMP/list.yaml"
+  echo "OK: Ladefehler liefern Exit-Code 2, kind: List wird gelesen."
+fi
