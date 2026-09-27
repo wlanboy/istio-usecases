@@ -61,11 +61,26 @@ python3 virtualservice.py <namespace> --context kind-local
 python3 virtualservice.py <namespace> --file manifests/   # lokale YAML-Dateien statt Cluster
 ```
 
-`virtualservice_cluster.py` ist eine Kopie ohne `--file`. Sie liest nur aus
-dem Cluster und braucht kein PyYAML:
+PyYAML wird nur für `--file` gebraucht; beim Lesen aus dem Cluster reicht die
+Standardbibliothek.
+
+Der Code ist auf mehrere Module verteilt, die neben `virtualservice.py` liegen
+müssen:
+
+| Modul | Inhalt |
+|---|---|
+| `virtualservice.py` | Kommandozeile und Ausgabe |
+| `loader.py` | Laden aus dem Cluster (`kubectl`) oder aus YAML-Dateien |
+| `model.py` | normalisiertes Modell (Hosts als FQDN, Gateways als `<namespace>/<name>`) |
+| `matching.py` | Match-Überdeckung von HTTP-Routen |
+| `checks.py` | die Prüfungen (`CHECKS`) |
+
+Für den Einsatz als einzelne Datei (z.B. auf einem Jump-Host) lässt sich
+daraus ein Zipapp bauen:
 
 ```bash
-python3 virtualservice_cluster.py <namespace> [--context kind-local]
+python3 -m zipapp . -m virtualservice:main -o virtualservice.pyz
+python3 virtualservice.pyz <namespace>
 ```
 
 Intern ausgeführte Befehle (ohne `--file`):
