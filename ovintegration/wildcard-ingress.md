@@ -98,9 +98,16 @@ Der Router laeuft im Namespace `openshift-ingress`, ausserhalb des Mesh, und spr
 einem frischen Cluster ohne eigene `NetworkPolicy`-Objekte ist das automatisch erlaubt. Gilt im
 Cluster jedoch, wie im Architektur-Abschnitt der `readme.md` bereits fuer istiod/Sidecars
 vermerkt, ein restriktives Default-Deny, muss zusaetzlich Ingress von `openshift-ingress` auf
-die Gateway-Ports (`8080`/`8443`, siehe `oc -n istio-system get svc istio-ingressgateway -o
-yaml`) explizit erlaubt werden, sonst liefert der Router bei Anfragen an die Wildcard-Route
-weiterhin `503`, obwohl Gateway-Pod und Route selbst gesund sind.
+die Gateway-Ports (Pod-Ports `80`/`443`, siehe `targetPort` in `oc -n istio-system get svc
+istio-ingressgateway -o yaml`) explizit erlaubt werden, sonst liefert der Router bei Anfragen
+an die Wildcard-Route weiterhin `503`, obwohl Gateway-Pod und Route selbst gesund sind.
+
+Der Selector nutzt das Label `policy-group.network.openshift.io/ingress` statt des
+Namespace-Namens `openshift-ingress`. So steht es in der OpenShift-Doku ("Network policy",
+`allow-from-openshift-ingress`), und nur dieses Label greift auch dann, wenn der
+IngressController mit `endpointPublishingStrategy: HostNetwork` laeuft (typisch bei
+Bare-Metal). Dann kommt der Router-Traffic aus dem Host-Netz und nicht aus einem Pod im
+Namespace `openshift-ingress`.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -118,7 +125,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: openshift-ingress
+              policy-group.network.openshift.io/ingress: ""
 ```
 
 ## Schritt 5: DNS und Erreichbarkeit

@@ -32,6 +32,18 @@ existiert.)
 - `cni.cniBinDir=/var/lib/cni/bin`, `cni.cniConfDir=/etc/cni/multus/net.d`: die auf OpenShift
   per Multus verwalteten CNI-Pfade statt der Kubernetes-Standardpfade.
 - `seLinuxOptions.type=spc_t` fuer die `istio-cni`-DaemonSet-Pods.
+- `trustedZtunnelNamespace=kube-system` (nur fuer Ambient relevant) und
+  `pilot.terminationMessagePolicy=FallbackToLogsOnError`.
+
+Das `--set pilot.cni.enabled=true` beim `istiod`-Install in `install-istio.sh` ist durch
+`platform=openshift` also bereits abgedeckt; es steht nur zur Lesbarkeit explizit da.
+
+**Ausblick nftables:** Auf `istio/istio@master` setzt das OpenShift-Plattformprofil seit
+[istio/istio#61432](https://github.com/istio/istio/pull/61432) (gemergt 2026-08-25) zusaetzlich
+`global.nativeNftables: true`. Ab dem naechsten Minor-Release nach 1.31 schreibt `istio-cni` auf
+OpenShift dann native nftables-Regeln statt iptables-Regeln. 1.31.x enthaelt das noch nicht.
+Wer es dort schon will, setzt `--set global.nativeNftables=true`; spaeter geht der Weg zurueck
+per `=false`.
 
 ## Architektur
 
@@ -42,7 +54,7 @@ Client (extern)
     v
 OpenShift Router (HAProxy)  --Route "ovintegration-<namespace>" in istio-system--
     |
-    | HTTP (Route -> Service, Port http2/8080)
+    | HTTP (Route -> Service-Port http2 = 80, targetPort 80)
     v
 Service istio-ingressgateway (ClusterIP, Namespace istio-system)
     |
@@ -61,7 +73,7 @@ Node-Ebene (einmalig pro Cluster):
   istio-cni-node DaemonSet (privilegiert, 1 Pod/Node, Namespace kube-system)
        |
        v
-  richtet iptables-Redirect im Pod-Netns ein, OHNE dass der App-Pod selbst privilegiert sein muss
+  richtet iptables-Redirect (nach 1.31: nftables) im Pod-Netns ein, OHNE dass der App-Pod selbst privilegiert sein muss
 ```
 
 - Die **OpenShift Route** liegt zwingend im selben Namespace wie der referenzierte Service
@@ -87,8 +99,12 @@ Node-Ebene (einmalig pro Cluster):
   in die bestehende OVN-Kubernetes-Konfiguration eingehaengt (das verbietet OpenShift), sondern
   ueber **Multus** als eigenstaendiges `NetworkAttachmentDefinition` aufgerufen. Der
   Sidecar-Injector setzt dafuer automatisch die Pod-Annotation
-  `k8s.v1.cni.cncf.io/networks: default/istio-cni` (`pilot.cni.provider=multus`). Keine
-  manuelle Namespace-Konfiguration noetig.
+  `k8s.v1.cni.cncf.io/networks: default/istio-cni` (`pilot.cni.provider=multus`); das
+  `NetworkAttachmentDefinition` selbst legt der `istio/cni`-Chart in `default` an. Keine
+  manuelle Namespace-Konfiguration noetig, denn Multus erlaubt auch mit `namespaceIsolation`
+  jedem Pod den Zugriff auf NADs aus `default`. Aeltere Anleitungen wie istio.io bis ca. 1.9
+  und viele Blogposts verlangen noch ein eigenes `istio-cni`-NAD in jedem App-Namespace; das ist mit
+  den aktuellen Charts ueberholt.
 - OVN-Kubernetes selbst bleibt die primaere CNI fuer Pod-IP-Vergabe und Kubernetes-`NetworkPolicy`;
   `istio-cni` haengt sich nur zusaetzlich ein, um im Pod-Netzwerk-Namespace die iptables-Regeln
   fuer den Envoy-Sidecar zu setzen. Eigene `NetworkPolicy`-Objekte (OVN-Kubernetes wertet diese
@@ -99,11 +115,19 @@ Node-Ebene (einmalig pro Cluster):
 ## Voraussetzungen
 
 - OpenShift-Cluster mit Cluster-Admin-Rechten (fuer `oc adm policy`, CRDs, DaemonSet in
-  `kube-system`) und OVN-Kubernetes als Netzwerk-Plugin (Standard seit OpenShift 4.14+).
+  `kube-system`) und OVN-Kubernetes als Netzwerk-Plugin. OpenShift SDN ist seit 4.15 bei
+  Neuinstallationen nicht mehr waehlbar und seit 4.17 entfernt; ab 4.17 ist OVN-Kubernetes
+  also immer gesetzt.
 - `oc` mit gueltigem Kontext auf diesen Cluster (`oc whoami`, `oc get clusterversion`).
 - `helm` >= 3.x lokal installiert.
 - Kein bereits installiertes Red Hat OpenShift Service Mesh (Operator) im selben Cluster,
   kollidiert mit einer parallelen Open-Source-Istio-Installation (gleiche CRDs/Webhooks).
+- Ab OpenShift 4.19 auch keine OpenShift-eigene Gateway-API-Nutzung. Sobald jemand eine
+  `GatewayClass` mit `controllerName: openshift.io/gateway-controller/v1` anlegt, installiert
+  der Ingress Operator selbststaendig OpenShift Service Mesh 3.x (eigenes istiod in
+  `openshift-ingress`). Das bringt dieselben Istio-CRDs mit, die hier `istio-base` per Helm
+  verwaltet. Pruefen mit `oc get gatewayclass`. Die Gateway-API-CRDs selbst verwaltet ab 4.19
+  der Ingress Operator; `istio-base` installiert sie nicht, daran aendert sich hier nichts.
 
 ## Installation
 
@@ -153,10 +177,19 @@ unabhaengig davon. Ohne eine der beiden Varianten werden Pods mit `unable to val
 any security context constraint` abgelehnt.
 
 **Warum `privileged`-SCC nur fuer `istio-cni`?** Nur der `istio-cni-node`-DaemonSet braucht
-echte Node-Rechte (fremde Pod-Netzwerk-Namespaces umkonfigurieren). Alle anderen
+echte Node-Rechte (fremde Pod-Netzwerk-Namespaces umkonfigurieren). Der Container selbst
+laeuft laut Chart zwar mit `privileged: false`, braucht aber UID 0, `hostPath`-Mounts,
+SELinux-Typ `spc_t` und die Capabilities `NET_ADMIN`, `NET_RAW`, `SYS_ADMIN`, `SYS_PTRACE`,
+`DAC_OVERRIDE`. Keine andere Standard-SCC erlaubt diese Kombination, deshalb `privileged`.
+Wer es enger will, baut sich eine eigene SCC mit genau diesen Rechten. Alle anderen
 Istio-Komponenten kommen mit `anyuid` aus. Das ist der ganze Sinn von `istio-cni`: die
 elevated privileges wandern aus jedem einzelnen App-Pod in einen einzigen, zentral
 kontrollierten DaemonSet.
+
+`oc adm policy add-scc-to-group` und `add-scc-to-user` aendern die SCC-Objekte nicht. Sie legen
+RBAC-Bindings namens `system:openshift:scc:<scc>` an, eine ClusterRoleBinding oder, bei
+`-z ... -n ...`, eine RoleBinding im Namespace. `oc get scc <name> -o yaml` zeigt diese
+Vergaben deshalb nicht an, siehe Troubleshooting.
 
 ### 1b. Alternative: Istio Ingress Gateway als alleinigen Eingang, TLS am Envoy (optional)
 
@@ -234,7 +267,9 @@ Dafuer muss `manifests/21-virtualservice.yaml` (bereits Teil von `install.sh`) a
 Events zeigen `unable to validate against any security context constraint`.**
 `anyuid`-SCC fehlt fuer die ServiceAccounts des betroffenen Namespace. Pruefen mit:
 ```bash
-oc get scc anyuid -o jsonpath='{.groups}'
+oc adm policy who-can use scc anyuid | grep <namespace>
+oc get clusterrolebinding system:openshift:scc:anyuid -o jsonpath='{.subjects}'
+oc get pod <pod> -n <namespace> -o jsonpath='{.metadata.annotations.openshift\.io/scc}'
 oc describe pod <pod> -n <namespace> | grep -A5 Events
 ```
 Nachtraeglich vergeben: `oc adm policy add-scc-to-group anyuid system:serviceaccounts:<namespace>`.
@@ -242,8 +277,9 @@ Nachtraeglich vergeben: `oc adm policy add-scc-to-group anyuid system:serviceacc
 **`istio-cni-node`-DaemonSet-Pods starten nicht / `0/<n>` Ready.**
 `privileged`-SCC fehlt fuer die ServiceAccount `istio-cni` in `kube-system`. Pruefen mit:
 ```bash
-oc get scc privileged -o jsonpath='{.users}'
+oc -n kube-system get rolebinding system:openshift:scc:privileged -o jsonpath='{.subjects}'
 oc -n kube-system get pods -l k8s-app=istio-cni-node
+oc -n kube-system describe daemonset istio-cni-node | grep -A5 Events
 ```
 
 **App-Pod haengt in `ContainerCreating`, `istio-proxy`-Container fehlt komplett oder Pod
