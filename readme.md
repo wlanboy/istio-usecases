@@ -89,6 +89,72 @@ indem man es ins Mesh verlagert statt in jede einzelne Anwendung.
   selbst etwas davon merkt. Interne Cluster-Kommunikation bleibt
   unangetastet.
 
+## Healthcheck
+
+[`istio-healthcheck.py`](istio-healthcheck.py) prüft eine Istio-Installation
+clusterweit. Es braucht nur Python ab 3.9 und `oc` oder `kubectl`. `istioctl` und
+pip-Pakete sind nicht nötig, das Skript läuft also auch unter Windows mit `oc.exe`.
+
+Das Skript prüft:
+
+- istiod-Deployments je Revision mit Version, Replicas und Restarts
+- die neun Kern-CRDs von Istio
+- Sidecar-Injector- und Validierungs-Webhooks, deren `caBundle` und Ziel-Service
+- Gateway-Deployments, die externe Adresse von LoadBalancer-Services und ob zu
+  jeder `Gateway`-Ressource ein passender Pod läuft
+- die DaemonSets `istio-cni` und `ztunnel`. Fehlt `istio-cni` auf OpenShift,
+  gibt es eine Warnung.
+- die Laufzeit der Mesh-Root-CA, der Signing-CA aus `cacerts` oder
+  `istio-ca-secret` und aller `credentialName`-Secrets der Gateways. Aus
+  Secrets liest das Skript nur die Zertifikats-Keys, nie den privaten Schlüssel.
+- STALE-Proxys, Proxys mit anderer Version als istiod und Sidecars, die nicht
+  mit istiod verbunden sind
+- Pods ohne Sidecar in Namespaces mit Injection, `istio.io/rev`-Labels ohne
+  passende Revision, Deployments mit `ReplicaFailure` wie einer fehlenden
+  `anyuid`-SCC auf OpenShift, dazu nicht bereite oder oft neu gestartete
+  `istio-proxy`-Container
+
+Exit-Code: `0` = OK, `1` = Warnungen, `2` = Fehler.
+
+```bash
+# Windows, oc.exe im PATH
+python istio-healthcheck.py
+
+# kubectl statt oc, anderer Context
+python3 istio-healthcheck.py --cli kubectl --context my-cluster
+
+# nur Probleme ausgeben, Zertifikatswarnung ab 60 Tagen
+python3 istio-healthcheck.py --problems-only --cert-warn-days 60
+
+# ohne clusterweite Leserechte: Pods/Deployments/Services/Gateways nur in diesen Namespaces
+python3 istio-healthcheck.py -n istio-ingress -n my-app
+
+# ohne pods/exec-Recht in istio-system
+python3 istio-healthcheck.py --no-sync
+```
+
+Diese Befehle führt das Skript intern aus, `<cli>` steht für `oc` oder `kubectl`:
+
+```bash
+<cli> get namespace istio-system -o json
+<cli> get namespaces -o json
+<cli> get customresourcedefinitions -o name
+<cli> get mutatingwebhookconfigurations -o json
+<cli> get validatingwebhookconfigurations -o json
+<cli> get daemonsets -A -o json
+<cli> get deployments -A -o json            # mit -n: je Namespace
+<cli> get pods -A -o json
+<cli> get services -A -o json
+<cli> get gateways.networking.istio.io -A -o json
+<cli> get configmap istio-ca-root-cert -n istio-system --ignore-not-found -o 'jsonpath={.data.root-cert\.pem}'
+<cli> get secret cacerts -n istio-system --ignore-not-found -o 'jsonpath={.data.ca-cert\.pem}'
+<cli> get secret istio-ca-secret -n istio-system --ignore-not-found -o 'jsonpath={.data.ca-cert\.pem}'
+<cli> get secret <credentialName> -n <gateway-pod-ns> --ignore-not-found \
+      -o 'jsonpath={.data.tls\.crt}{"|"}{.data.cert}{"|"}{.data.ca\.crt}{"|"}{.data.cacert}'
+<cli> get pods -n istio-system -l app=istiod -o json
+<cli> exec -n istio-system <istiod-pod> -- pilot-discovery request GET /debug/syncz
+```
+
 ## Voraussetzungen
 
 - laufender Kubernetes-Cluster mit installiertem Istio
