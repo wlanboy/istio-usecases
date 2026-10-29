@@ -1,0 +1,15 @@
+# Feste Quell-IP fuer alle Egress-Gateway-Pods. Cluster-scoped (kein Namespace).
+# ${EGRESS_IP} muss eine freie IP im Subnetz der Nodes mit Label k8s.ovn.org/egress-assignable sein.
+apiVersion: k8s.ovn.org/v1
+kind: EgressIP
+metadata:
+  name: istio-egressgateway
+spec:
+  egressIPs:
+    - ${EGRESS_IP}
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: istio-egress
+  podSelector:
+    matchLabels:
+      istio: egressgateway

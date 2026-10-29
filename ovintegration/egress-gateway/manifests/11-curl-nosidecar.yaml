@@ -1,0 +1,31 @@
+# Test-Client OHNE Sidecar: simuliert einen Workload, der Istio umgeht. Ohne EgressFirewall bzw.
+# NetworkPolicy erreicht er github.com direkt, am Egress Gateway vorbei.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl-nosidecar
+  namespace: ${NAMESPACE}
+  labels:
+    app: curl-nosidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: curl-nosidecar
+  template:
+    metadata:
+      labels:
+        app: curl-nosidecar
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.0
+          command: ["/bin/sleep", "infinity"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

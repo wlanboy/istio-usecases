@@ -1,0 +1,16 @@
+# Macht github.com:443 in der Service-Registry bekannt. Ohne exportTo gilt der Eintrag
+# mesh-weit (exportTo "*"), damit sieht ihn auch der Egress Gateway in istio-egress.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: github
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - github.com
+  location: MESH_EXTERNAL
+  resolution: DNS
+  ports:
+    - number: 443
+      name: tls
+      protocol: TLS

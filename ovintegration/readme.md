@@ -329,6 +329,9 @@ dessen Default-Zertifikat. Fuer die naechsten Ausbaustufen:
   Zertifikat direkt am Envoy (statt am Router) terminieren.
 - `./install-istio-passthrough.sh` automatisiert die Kombination aus beiden Dokumenten
   (Wildcard-Route + TLS-Terminierung am Envoy), siehe Schritt 1b oben.
+- [`egress-gateway/egress-gateway.md`](egress-gateway/egress-gateway.md): ausgehenden Traffic
+  ueber einen Istio Egress Gateway fuehren und mit OVN-Kubernetes `EgressFirewall`/`EgressIP`
+  erzwingen bzw. auf eine feste Quell-IP legen.
 
 ## Aufraeumen
 

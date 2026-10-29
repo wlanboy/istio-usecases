@@ -1,0 +1,15 @@
+# OVN-Kubernetes EgressFirewall fuer den App-Namespace: jedes Ziel ausserhalb des Clusters ist
+# gesperrt. Ziele im Cluster-Netz (Pods, ClusterIP-Services mit Pod-Backends, also auch DNS,
+# istiod und der Egress Gateway) nimmt OVN-Kubernetes automatisch aus. Gesperrt bleibt
+# dagegen alles mit Host-Netz-Backend, z. B. der Kubernetes-API-Server.
+# Name muss "default" sein, maximal ein EgressFirewall-Objekt pro Namespace.
+apiVersion: k8s.ovn.org/v1
+kind: EgressFirewall
+metadata:
+  name: default
+  namespace: ${NAMESPACE}
+spec:
+  egress:
+    - type: Deny
+      to:
+        cidrSelector: 0.0.0.0/0

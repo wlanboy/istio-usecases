@@ -1,0 +1,19 @@
+# EgressFirewall fuer den Gateway-Namespace: der Egress Gateway darf nur github.com:443
+# erreichen, auch wenn spaeter jemand weitere Gateway-/VirtualService-Objekte anlegt.
+# Regeln werden von oben nach unten ausgewertet, die erste passende gilt.
+apiVersion: k8s.ovn.org/v1
+kind: EgressFirewall
+metadata:
+  name: default
+  namespace: istio-egress
+spec:
+  egress:
+    - type: Allow
+      to:
+        dnsName: github.com
+      ports:
+        - protocol: TCP
+          port: 443
+    - type: Deny
+      to:
+        cidrSelector: 0.0.0.0/0

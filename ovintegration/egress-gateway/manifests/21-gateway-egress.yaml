@@ -1,0 +1,20 @@
+# Oeffnet am Egress Gateway Port 443 fuer SNI github.com. PASSTHROUGH: Envoy terminiert TLS
+# nicht, sondern leitet anhand der SNI weiter. Das TLS-Handshake laeuft Ende-zu-Ende zwischen
+# curl und github.com.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: egress-github
+  namespace: istio-egress
+spec:
+  selector:
+    istio: egressgateway
+  servers:
+    - port:
+        number: 443
+        name: tls
+        protocol: TLS
+      hosts:
+        - github.com
+      tls:
+        mode: PASSTHROUGH

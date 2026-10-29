@@ -1,0 +1,49 @@
+# Alternative zu 30-egressfirewall-app.yaml (nicht beides gleichzeitig noetig).
+# Standard-Kubernetes-NetworkPolicy, von OVN-Kubernetes ausgewertet. Erlaubt Pods im
+# App-Namespace nur noch: eigenen Namespace, DNS, istiod und den Egress Gateway.
+# Alles andere, auch andere Namespaces im Cluster, ist gesperrt.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-only-via-gateway
+  namespace: ${NAMESPACE}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}
+    # OpenShift-DNS: Service dns-default lauscht auf 53, die Pods aber auf 5353.
+    # NetworkPolicy wird nach der Service-Uebersetzung ausgewertet, also 5353.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+    # xDS und Zertifikate vom istiod
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15012
+    # Egress Gateway (Service-Port 443 -> Pod-Port 443)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-egress
+          podSelector:
+            matchLabels:
+              istio: egressgateway
+      ports:
+        - protocol: TCP
+          port: 443

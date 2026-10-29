@@ -1,0 +1,12 @@
+# Access-Log nur fuer die Egress-Gateway-Pods (Namespace istio-egress), damit sichtbar ist,
+# welche Verbindungen tatsaechlich ueber den Gateway laufen. Mesh-weit waere stattdessen
+# --set meshConfig.accessLogFile=/dev/stdout beim istiod-Helm-Release noetig.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: egress-access-log
+  namespace: istio-egress
+spec:
+  accessLogging:
+    - providers:
+        - name: envoy

@@ -1,0 +1,11 @@
+# Subset auf den Egress-Gateway-Service. Hier haengt spaeter trafficPolicy fuer die Strecke
+# Sidecar -> Egress Gateway (z. B. tls.mode ISTIO_MUTUAL, connectionPool).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: egressgateway-for-github
+  namespace: ${NAMESPACE}
+spec:
+  host: istio-egressgateway.istio-egress.svc.cluster.local
+  subsets:
+    - name: github

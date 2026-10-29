@@ -1,0 +1,39 @@
+# Zwei Routing-Regeln fuer denselben Host:
+#   1. gateways: mesh            -> Sidecar des Clients schickt github.com:443 zum Egress Gateway
+#   2. gateways: egress-github   -> Egress Gateway schickt github.com:443 ins Internet
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: github-via-egressgateway
+  namespace: ${NAMESPACE}
+spec:
+  hosts:
+    - github.com
+  gateways:
+    - mesh
+    - istio-egress/egress-github
+  tls:
+    - match:
+        - gateways:
+            - mesh
+          port: 443
+          sniHosts:
+            - github.com
+      route:
+        - destination:
+            host: istio-egressgateway.istio-egress.svc.cluster.local
+            subset: github
+            port:
+              number: 443
+    - match:
+        - gateways:
+            - istio-egress/egress-github
+          port: 443
+          sniHosts:
+            - github.com
+      route:
+        - destination:
+            host: github.com
+            port:
+              number: 443
+          weight: 100
