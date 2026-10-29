@@ -5,7 +5,7 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: github-via-egressgateway
-  namespace: ${NAMESPACE}
+  namespace: egress-demo
 spec:
   hosts:
     - github.com

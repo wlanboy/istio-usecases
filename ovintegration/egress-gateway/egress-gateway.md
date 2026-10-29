@@ -86,15 +86,11 @@ Gateway-API-Beispiel ebenfalls einen eigenen Egress-Namespace.
   OVN-Kubernetes EgressIP unterstuetzt (Bare Metal, vSphere, RHOSP, AWS, Google Cloud, Azure,
   IBM Z/Power, Nutanix).
 - Alle Befehle unten laufen aus dem Verzeichnis `ovintegration/egress-gateway/`. Die Manifeste
-  liegen in `manifests/` und enthalten Platzhalter (`${NAMESPACE}`, `${EGRESS_IP}`), die
-  `render` per `sed` ersetzt:
+  liegen in `manifests/` und verwenden fest den Demo-Namespace `egress-demo`. Nur die
+  EgressIP in `manifests/40-egressip.yaml` muss vor Schritt 7 angepasst werden.
 
 ```bash
 cd ovintegration/egress-gateway
-export NAMESPACE=egress-demo
-render() {
-  sed -e "s|\${NAMESPACE}|${NAMESPACE}|g" -e "s|\${EGRESS_IP}|${EGRESS_IP:-}|g" "$1"
-}
 ```
 
 ## Schritt 1: Egress Gateway installieren
@@ -151,13 +147,13 @@ tragen.
 ## Schritt 2: Demo-Namespace mit Test-Clients
 
 ```bash
-render manifests/00-namespace.yaml | oc apply -f -
-oc adm policy add-scc-to-group anyuid "system:serviceaccounts:${NAMESPACE}"
+oc apply -f manifests/00-namespace.yaml
+oc adm policy add-scc-to-group anyuid system:serviceaccounts:egress-demo
 
-render manifests/10-curl.yaml | oc apply -f -
-render manifests/11-curl-nosidecar.yaml | oc apply -f -
-oc -n "${NAMESPACE}" rollout status deployment/curl
-oc -n "${NAMESPACE}" rollout status deployment/curl-nosidecar
+oc apply -f manifests/10-curl.yaml
+oc apply -f manifests/11-curl-nosidecar.yaml
+oc -n egress-demo rollout status deployment/curl
+oc -n egress-demo rollout status deployment/curl-nosidecar
 ```
 
 - `curl` laeuft mit Sidecar (`2/2`). Mit ihm pruefen die Tests, ob Traffic ueber den Gateway geht.
@@ -167,9 +163,9 @@ oc -n "${NAMESPACE}" rollout status deployment/curl-nosidecar
 Ausgangszustand, noch ohne Egress-Konfiguration:
 
 ```bash
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
-oc -n "${NAMESPACE}" exec deploy/curl-nosidecar -- \
+oc -n egress-demo exec deploy/curl-nosidecar -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 ```
 
@@ -179,10 +175,10 @@ Beide liefern `200`. Der Sidecar laesst unbekannte Ziele standardmaessig durch
 ## Schritt 3: Traffic zu github.com ueber den Gateway leiten
 
 ```bash
-render manifests/20-serviceentry-github.yaml | oc apply -f -
+oc apply -f manifests/20-serviceentry-github.yaml
 oc apply -f manifests/21-gateway-egress.yaml
-render manifests/22-destinationrule-egressgateway.yaml | oc apply -f -
-render manifests/23-virtualservice-github.yaml | oc apply -f -
+oc apply -f manifests/22-destinationrule-egressgateway.yaml
+oc apply -f manifests/23-virtualservice-github.yaml
 ```
 
 Die vier Objekte und ihre Aufgabe:
@@ -248,7 +244,7 @@ Egress Gateway. Was dort mit SNI `github.com` ankommt, geht zum externen Host au
 Test:
 
 ```bash
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 oc -n istio-egress logs deploy/istio-egressgateway --tail=5
 ```
@@ -261,11 +257,11 @@ Troubleshooting.
 
 ```bash
 # 1) Client ohne Sidecar
-oc -n "${NAMESPACE}" exec deploy/curl-nosidecar -- \
+oc -n egress-demo exec deploy/curl-nosidecar -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 
 # 2) Client mit Sidecar, aber ein Ziel ohne Egress-Konfiguration
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.github.com
 ```
 
@@ -279,8 +275,8 @@ Egress Gateway nur ein Angebot, keine Pflicht.
 ### Variante A: EgressFirewall (OpenShift-nativ, empfohlen)
 
 ```bash
-render manifests/30-egressfirewall-app.yaml | oc apply -f -
-oc -n "${NAMESPACE}" get egressfirewall default
+oc apply -f manifests/30-egressfirewall-app.yaml
+oc -n egress-demo get egressfirewall default
 ```
 
 ```yaml
@@ -316,7 +312,7 @@ zusaetzlich eine Deny-Regel fuer `::/0`.
 ### Variante B: NetworkPolicy
 
 ```bash
-render manifests/alternative-networkpolicy-app.yaml | oc apply -f -
+oc apply -f manifests/alternative-networkpolicy-app.yaml
 ```
 
 Statt sperren, was nach draussen geht, erlaubt die Policy nur explizit aufgezaehlte Ziele:
@@ -336,15 +332,15 @@ Beide Varianten koennen zusammen aktiv sein. Fuer diese Demo reicht eine.
 
 ```bash
 # ueber den Gateway: weiterhin erlaubt
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 
 # ohne Sidecar: jetzt gesperrt
-oc -n "${NAMESPACE}" exec deploy/curl-nosidecar -- \
+oc -n egress-demo exec deploy/curl-nosidecar -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 
 # Ziel ohne Gateway-Route: jetzt gesperrt
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.github.com
 ```
 
@@ -416,9 +412,9 @@ Erwartet: `200`, dann `000` (Timeout).
 oc label node <node-1> k8s.ovn.org/egress-assignable=""
 oc label node <node-2> k8s.ovn.org/egress-assignable=""
 
-# 2. EgressIP anlegen
-export EGRESS_IP=<freie-IP-im-Node-Subnetz>
-render manifests/40-egressip.yaml | oc apply -f -
+# 2. EgressIP anlegen (vorher 192.0.2.10 in manifests/40-egressip.yaml durch eine freie IP
+#    im Node-Subnetz ersetzen)
+oc apply -f manifests/40-egressip.yaml
 
 # 3. Zuordnung pruefen
 oc get egressip istio-egressgateway -o yaml
@@ -464,10 +460,10 @@ mitschneiden und parallel `curl` aus Schritt 3 ausfuehren:
 
 ```bash
 oc debug node/<egress-node> -- chroot /host \
-  tcpdump -nn -i br-ex -c 5 "src host ${EGRESS_IP} and tcp port 443"
+  tcpdump -nn -i br-ex -c 5 "src host 192.0.2.10 and tcp port 443"
 
 # zweites Terminal
-oc -n "${NAMESPACE}" exec deploy/curl -c curl -- \
+oc -n egress-demo exec deploy/curl -c curl -- \
   curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://github.com
 ```
 
@@ -508,9 +504,9 @@ OpenShift Service Mesh 2.x konfigurierte den Egress Gateway ueber `spec.gateways
 direkt raus.
 
 ```bash
-oc -n "${NAMESPACE}" get serviceentry,destinationrule,virtualservice
-istioctl -n "${NAMESPACE}" proxy-config listener deployment/curl --port 443
-istioctl -n "${NAMESPACE}" proxy-config cluster deployment/curl | grep -E 'github|egressgateway'
+oc -n egress-demo get serviceentry,destinationrule,virtualservice
+istioctl -n egress-demo proxy-config listener deployment/curl --port 443
+istioctl -n egress-demo proxy-config cluster deployment/curl | grep -E 'github|egressgateway'
 ```
 
 Im Listener auf 443 muss eine Filter-Chain fuer SNI `github.com` auf
@@ -541,8 +537,8 @@ wenn mesh-weit `defaultServiceExportTo` oder `defaultVirtualServiceExportTo` auf
 - Nur bei Variante B: DNS mit Port 53 statt 5353 freigegeben, oder Selektoren fuer istiod
   (`app: istiod`) bzw. Gateway (`istio: egressgateway`) passen nicht.
   ```bash
-  oc -n "${NAMESPACE}" exec deploy/curl -c curl -- nslookup github.com
-  oc -n "${NAMESPACE}" get networkpolicy egress-only-via-gateway -o yaml
+  oc -n egress-demo exec deploy/curl -c curl -- nslookup github.com
+  oc -n egress-demo get networkpolicy egress-only-via-gateway -o yaml
   ```
 
 **Nach Schritt 6 scheitert `curl` mit Sidecar, obwohl Schritt 5 lief.** Die `dnsName`-Regel kennt
@@ -579,16 +575,16 @@ oc label node <node-1> k8s.ovn.org/egress-assignable-
 oc label node <node-2> k8s.ovn.org/egress-assignable-
 
 oc -n istio-egress delete egressfirewall default
-oc -n "${NAMESPACE}" delete egressfirewall default --ignore-not-found
-oc -n "${NAMESPACE}" delete networkpolicy egress-only-via-gateway --ignore-not-found
+oc -n egress-demo delete egressfirewall default --ignore-not-found
+oc -n egress-demo delete networkpolicy egress-only-via-gateway --ignore-not-found
 
-oc -n "${NAMESPACE}" delete virtualservice github-via-egressgateway
-oc -n "${NAMESPACE}" delete destinationrule egressgateway-for-github
-oc -n "${NAMESPACE}" delete serviceentry github
+oc -n egress-demo delete virtualservice github-via-egressgateway
+oc -n egress-demo delete destinationrule egressgateway-for-github
+oc -n egress-demo delete serviceentry github
 oc -n istio-egress delete gateway egress-github
 
-oc adm policy remove-scc-from-group anyuid "system:serviceaccounts:${NAMESPACE}"
-oc delete namespace "${NAMESPACE}"
+oc adm policy remove-scc-from-group anyuid system:serviceaccounts:egress-demo
+oc delete namespace egress-demo
 
 oc -n istio-egress delete telemetry egress-access-log
 helm uninstall istio-egressgateway -n istio-egress

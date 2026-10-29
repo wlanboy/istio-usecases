@@ -4,7 +4,7 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: egressgateway-for-github
-  namespace: ${NAMESPACE}
+  namespace: egress-demo
 spec:
   host: istio-egressgateway.istio-egress.svc.cluster.local
   subsets:
