@@ -1,0 +1,25 @@
+{{- if eq (toString .Values.wartung) "true" }}
+# Gibt es nur bei wartung=true. Deployt die beiden VirtualServices aus
+# manifestwartung/. Bei wartung=false entfernt wartung-root diese App (prune),
+# der Finalizer löscht dabei die VirtualServices.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wartung-aktiv
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: wartung/manifestwartung
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: service
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+{{- end }}

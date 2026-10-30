@@ -1,0 +1,18 @@
+# Sync-Welle -1: Die Namespaces stehen, bevor die Kind-Apps angelegt werden.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: client
+  labels:
+    istio-injection: enabled
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: service
+  labels:
+    istio-injection: enabled
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"

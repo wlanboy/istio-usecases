@@ -1,0 +1,8 @@
+# Wartungsmodus. Nicht hier im Git umschalten, sondern als Parameter-Override
+# an der Application wartung-root (siehe ../argocd.md):
+#   argocd app set wartung-root --helm-set wartung=true
+wartung: false
+
+# Git-Quelle der Kind-Apps
+repoURL: https://github.com/wlanboy/istio-usecases.git
+targetRevision: main

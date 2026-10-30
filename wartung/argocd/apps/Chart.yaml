@@ -1,0 +1,5 @@
+apiVersion: v2
+name: wartung-apps
+description: App of Apps für den Wartungsmodus-Usecase (client, service, healthz-cron)
+type: application
+version: 0.1.0

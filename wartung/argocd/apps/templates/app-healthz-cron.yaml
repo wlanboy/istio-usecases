@@ -1,0 +1,32 @@
+# cron/cronjob.yaml über cron/kustomization.yaml. Der Patch setzt spec.suspend
+# an allen CronJobs mit Label wartung=service auf den Wert von .Values.wartung,
+# wie es wartung-an.sh / wartung-aus.sh per kubectl patch tun.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wartung-healthz-cron
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: wartung/cron
+    kustomize:
+      patches:
+        - target:
+            kind: CronJob
+            labelSelector: wartung=service
+          patch: |-
+            - op: add
+              path: /spec/suspend
+              value: {{ eq (toString .Values.wartung) "true" }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: client
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
