@@ -64,6 +64,7 @@ Ohne manifestwartung/:                Mit manifestwartung/:
 | `setup.sh` / `delete.sh`                            | Installation / Deinstallation                            |
 | `wartung-an.sh` / `wartung-aus.sh`                  | Wartungsmodus ein- / ausschalten                         |
 | `run.sh`                                            | Test aller vier Aufrufwege                               |
+| `cron/cronjob.yaml`, `cron/cron.md`                 | CronJob mit curl, der die Wartung erkennt                |
 
 ## Installation
 
