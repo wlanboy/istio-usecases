@@ -1,0 +1,20 @@
+# Nur für den Ingress-Weg ({{ .Values.host }}). Bewusst NICHT an "mesh"
+# gebunden: mesh-interne Aufrufe auf {{ .Values.deploymentName }}.{{ .Release.Namespace }}.svc.cluster.local
+# laufen ohne VirtualService, damit ein späterer Wartungs-VirtualService
+# nicht mit diesem hier kollidiert.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ .Values.deploymentName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  hosts:
+    - {{ .Values.host }}
+  gateways:
+    - {{ .Values.deploymentName }}-gateway
+  http:
+    - route:
+        - destination:
+            host: {{ .Values.deploymentName }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}

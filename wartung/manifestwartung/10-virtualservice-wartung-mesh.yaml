@@ -1,0 +1,37 @@
+# Wartungsmodus für mesh-interne Aufrufe (z.B. client -> service).
+# Greift im Envoy-Sidecar des Aufrufers: der Request verlässt den Client-Pod
+# gar nicht erst, der Service-Pod sieht während der Wartung keinen Traffic.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: service-wartung
+  namespace: service
+spec:
+  hosts:
+    - service.service.svc.cluster.local
+  gateways:
+    - mesh
+  http:
+    # Wartungsteam: mit Header "x-wartung-bypass: true" geht der Request
+    # trotz Wartung an den echten Service (z.B. für Tests nach dem Update).
+    - name: wartung-bypass
+      match:
+        - headers:
+            x-wartung-bypass:
+              exact: "true"
+      route:
+        - destination:
+            host: service.service.svc.cluster.local
+            port:
+              number: 80
+    # Alle anderen bekommen 503 + Retry-After (Sekunden bis zum nächsten Versuch).
+    - name: wartung
+      directResponse:
+        status: 503
+        body:
+          string: '{"status":"maintenance","message":"Service wird gewartet, bitte später erneut versuchen."}'
+      headers:
+        response:
+          set:
+            content-type: application/json
+            retry-after: "300"

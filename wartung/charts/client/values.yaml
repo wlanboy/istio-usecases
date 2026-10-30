@@ -1,0 +1,35 @@
+deploymentName: client
+
+image:
+  repository: wlanboy/http-tester
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Service-Port 80 -> Container-Port 5000 (uvicorn im http-tester)
+service:
+  port: 80
+  targetPort: 5000
+
+# Externer Hostname am Istio Ingress-Gateway
+host: client.localhost
+
+istio:
+  gateway:
+    selector:
+      istio: ingressgateway
+
+terminationGracePeriodSeconds: 60
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

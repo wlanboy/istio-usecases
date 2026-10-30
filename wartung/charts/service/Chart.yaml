@@ -1,0 +1,6 @@
+apiVersion: v2
+name: service
+description: Service (http-tester), dessen Wartung über Istio simuliert wird
+type: application
+version: 0.1.0
+appVersion: "latest"

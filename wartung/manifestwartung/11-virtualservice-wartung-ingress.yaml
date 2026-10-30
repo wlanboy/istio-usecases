@@ -1,0 +1,42 @@
+# Wartungsmodus für Aufrufe von außen über das Ingress-Gateway (service.localhost).
+# Gleicher Host und gleiches Gateway wie der VirtualService aus dem Helm-Chart.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: service-wartung-ingress
+  namespace: service
+spec:
+  hosts:
+    - service.localhost
+  gateways:
+    - service-gateway
+  http:
+    - name: wartung-bypass
+      match:
+        - headers:
+            x-wartung-bypass:
+              exact: "true"
+      route:
+        - destination:
+            host: service.service.svc.cluster.local
+            port:
+              number: 80
+    # Expliziter Match statt Catch-all: Istio führt mehrere VirtualServices
+    # für denselben Host am Gateway zusammen und sortiert dabei alle
+    # Catch-all-Routen (auch "prefix: /" oder "regex: .*") ans Ende, in
+    # Reihenfolge der Erstellungszeit. Ohne diesen Match gewinnt die ältere
+    # Catch-all-Route aus dem Helm-Chart und die Wartung greift nicht.
+    - name: wartung
+      match:
+        - withoutHeaders:
+            x-wartung-bypass:
+              exact: "true"
+      directResponse:
+        status: 503
+        body:
+          string: '{"status":"maintenance","message":"Service wird gewartet, bitte später erneut versuchen."}'
+      headers:
+        response:
+          set:
+            content-type: application/json
+            retry-after: "300"
