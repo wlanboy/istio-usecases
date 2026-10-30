@@ -4,6 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_URL="http://service.service.svc.cluster.local/healthz"
 
+echo "==> Halte CronJobs mit Label wartung=service an (spec.suspend=true)"
+kubectl get cronjob -A -l wartung=service \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      kubectl -n "${ns}" patch cronjob "${name}" --type merge -p '{"spec":{"suspend":true}}'
+    done
+
+echo "==> Breche laufende Jobs mit Label wartung=service ab"
+kubectl get job -A -l wartung=service \
+  -o jsonpath='{range .items[?(@.status.active)]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      kubectl -n "${ns}" delete job "${name}"
+    done
+
 echo "==> Aktiviere Wartungsmodus für 'service' (VirtualServices aus manifestwartung/)"
 kubectl apply -f "${SCRIPT_DIR}/manifestwartung/"
 

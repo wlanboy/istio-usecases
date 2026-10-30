@@ -144,9 +144,16 @@ HTTP-Status: 200 | Retry-After:
 `wartung-an.sh` wendet die Manifeste an und wartet dann bis zu 30 Sekunden,
 bis der Client wirklich 503 bekommt. istiod braucht ein paar Sekunden, bis die
 neuen Routen in den Sidecars ankommen. Ohne das Warten zeigt ein direkt
-folgendes `./run.sh` manchmal noch 200. Intern:
+folgendes `./run.sh` manchmal noch 200. Vorher hält es alle CronJobs mit dem
+Label `wartung: service` an und löscht deren laufende Jobs, Details in
+[cron/cron.md](cron/cron.md). Intern:
 
 ```bash
+# für jeden CronJob aus: kubectl get cronjob -A -l wartung=service
+kubectl -n <namespace> patch cronjob <name> --type merge -p '{"spec":{"suspend":true}}'
+# für jeden laufenden Job aus: kubectl get job -A -l wartung=service
+kubectl -n <namespace> delete job <name>
+
 kubectl apply -f manifestwartung/
 # jede Sekunde, bis status_code 503 ist (max. 30 Versuche)
 curl -s http://client.localhost/api/request -H 'content-type: application/json' \
@@ -179,16 +186,20 @@ Wartungsmodus beenden:
 ```
 
 Intern dasselbe in umgekehrter Richtung. Das Skript wartet, bis der Client
-wieder 200 bekommt:
+wieder 200 bekommt, und setzt erst dann die CronJobs fort:
 
 ```bash
 kubectl delete -f manifestwartung/ --ignore-not-found
 # jede Sekunde, bis status_code 200 ist (max. 30 Versuche)
 curl -s http://client.localhost/api/request -H 'content-type: application/json' \
   -d '{"url":"http://service.service.svc.cluster.local/healthz"}'
+
+# für jeden CronJob aus: kubectl get cronjob -A -l wartung=service
+kubectl -n <namespace> patch cronjob <name> --type merge -p '{"spec":{"suspend":false}}'
 ```
 
-Kommt nach 30 Sekunden nicht der erwartete Status, endet das Skript mit Exit-Code 1.
+Kommt nach 30 Sekunden nicht der erwartete Status, endet das Skript mit
+Exit-Code 1 und die CronJobs bleiben angehalten.
 
 Wartezeit in `retry-after`, Body und Bypass-Header stehen direkt in den beiden
 Manifesten unter `manifestwartung/`. Wer sie ändert, ändert nur diese Dateien.

@@ -6,12 +6,23 @@ kind: CronJob
 metadata:
   name: healthz-cron
   namespace: client
+  labels:
+    # wartung-an.sh hält alle CronJobs mit diesem Label an (spec.suspend=true),
+    # wartung-aus.sh startet sie wieder.
+    wartung: service
 spec:
   schedule: "*/1 * * * *"
   concurrencyPolicy: Forbid
+  # Nach dem Fortsetzen wird ein verpasster Lauf nur nachgeholt, wenn er
+  # höchstens 30s zurückliegt. Ohne den Wert startet sofort der letzte verpasste Lauf.
+  startingDeadlineSeconds: 30
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
+    metadata:
+      labels:
+        # wartung-an.sh bricht laufende Jobs mit diesem Label ab.
+        wartung: service
     spec:
       backoffLimit: 0
       activeDeadlineSeconds: 60
