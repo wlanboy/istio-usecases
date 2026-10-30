@@ -80,9 +80,13 @@ helm upgrade --install service ./charts/service --namespace service
 helm upgrade --install client ./charts/client --namespace client
 kubectl -n service rollout status deployment/service --timeout=120s
 kubectl -n client rollout status deployment/client --timeout=120s
+kubectl apply -f cron/cronjob.yaml
 kubectl -n service get deploy,svc,gateway,virtualservice
-kubectl -n client get deploy,svc,gateway,virtualservice
+kubectl -n client get deploy,svc,gateway,virtualservice,cronjob
 ```
+
+`setup.sh` legt auch den CronJob `healthz-cron` an, Details in
+[cron/cron.md](cron/cron.md).
 
 Danach erreichbar:
 
@@ -271,6 +275,7 @@ Führt intern aus:
 
 ```bash
 kubectl delete -f manifestwartung/ --ignore-not-found
+kubectl delete -f cron/cronjob.yaml --ignore-not-found
 helm uninstall client --namespace client --ignore-not-found
 helm uninstall service --namespace service --ignore-not-found
 kubectl delete -f manifests/00-namespaces.yaml --ignore-not-found

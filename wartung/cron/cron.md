@@ -121,6 +121,8 @@ fertig ist.
 
 ## Installation
 
+`../setup.sh` legt den CronJob mit an. Einzeln:
+
 ```bash
 kubectl apply -f cronjob.yaml
 kubectl -n client get cronjob healthz-cron
@@ -275,4 +277,4 @@ result=$(curl -s -o /dev/null -H 'x-wartung-bypass: true' -w '%{http_code} %head
 kubectl delete -f cronjob.yaml --ignore-not-found
 ```
 
-`../delete.sh` löscht den Namespace `client` und damit auch den CronJob.
+`../delete.sh` führt das mit aus.

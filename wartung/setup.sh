@@ -16,9 +16,12 @@ echo "==> Warte auf die Deployments"
 kubectl -n service rollout status deployment/service --timeout=120s
 kubectl -n client rollout status deployment/client --timeout=120s
 
+echo "==> Lege CronJob 'healthz-cron' in Namespace 'client' an"
+kubectl apply -f "${SCRIPT_DIR}/cron/cronjob.yaml"
+
 echo "==> Fertig."
 kubectl -n service get deploy,svc,gateway,virtualservice
-kubectl -n client get deploy,svc,gateway,virtualservice
+kubectl -n client get deploy,svc,gateway,virtualservice,cronjob
 echo
 echo "    Client-UI:  http://client.localhost"
 echo "    Service-UI: http://service.localhost"
