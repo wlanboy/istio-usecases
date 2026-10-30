@@ -1,0 +1,61 @@
+# Ruft jede Minute http://service.service.svc.cluster.local/healthz auf.
+# Der Pod läuft im Namespace client und hat damit einen Envoy-Sidecar: die
+# Wartungs-VirtualServices aus manifestwartung/ greifen auch für diesen Aufruf.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: healthz-cron
+  namespace: client
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 60
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app: healthz-cron
+          annotations:
+            # istio-proxy als nativer Sidecar (Init-Container mit restartPolicy: Always):
+            # curl startet erst, wenn Envoy bereit ist, und der Job endet, sobald curl
+            # fertig ist. Ohne die Annotation läuft der Sidecar weiter und der Job
+            # wird nie Complete.
+            sidecar.istio.io/nativeSidecar: "true"
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: curl
+              image: curlimages/curl:8.11.1
+              env:
+                - name: SERVICE_URL
+                  value: http://service.service.svc.cluster.local/healthz
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  result=$(curl -s -o /dev/null -w '%{http_code} %header{retry-after}' "${SERVICE_URL}")
+                  status=${result%% *}
+                  retry_after=${result#* }
+                  case "${status}" in
+                    200)
+                      echo "OK: ${SERVICE_URL} liefert 200"
+                      ;;
+                    503)
+                      # 503 mit Retry-After kommt aus dem Wartungs-VirtualService.
+                      # 503 ohne Retry-After ist ein echter Fehler (z.B. kein Pod bereit).
+                      if [ -n "${retry_after}" ]; then
+                        echo "WARTUNG: ${SERVICE_URL} ist in Wartung (Retry-After: ${retry_after}s), Lauf übersprungen"
+                      else
+                        echo "FEHLER: ${SERVICE_URL} liefert 503 ohne Retry-After" >&2
+                        exit 1
+                      fi
+                      ;;
+                    *)
+                      echo "FEHLER: ${SERVICE_URL} liefert HTTP ${status}" >&2
+                      exit 1
+                      ;;
+                  esac
