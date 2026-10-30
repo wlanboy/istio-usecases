@@ -1,0 +1,6 @@
+# Für die Argo-CD-App wartung-healthz-cron (../argocd/argocd.md): Argo CD setzt
+# per Kustomize-Patch spec.suspend. "kubectl apply -f cronjob.yaml" geht weiterhin.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cronjob.yaml
