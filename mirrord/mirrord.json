@@ -1,0 +1,20 @@
+{
+  "target": {
+    "path": "deployment/nginx",
+    "namespace": "mirrordtest"
+  },
+  "agent": {
+    "namespace": "mirrordtest"
+  },
+  "feature": {
+    "network": {
+      "incoming": {
+        "mode": "steal"
+      },
+      "outgoing": true,
+      "dns": true
+    },
+    "fs": "local",
+    "env": true
+  }
+}

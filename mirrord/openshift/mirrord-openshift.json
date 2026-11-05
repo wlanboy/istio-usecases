@@ -1,0 +1,25 @@
+{
+  "target": {
+    "path": "deployment/nginx",
+    "namespace": "mirrordtest"
+  },
+  "agent": {
+    "namespace": "mirrord-agents",
+    "service_account": "mirrord-agent",
+    "privileged": true
+  },
+  "feature": {
+    "network": {
+      "incoming": {
+        "mode": "steal",
+        "http_filter": {
+          "header_filter": "x-mirrord: {{ get_env(name="USER", default="dev") }}"
+        }
+      },
+      "outgoing": true,
+      "dns": true
+    },
+    "fs": "local",
+    "env": true
+  }
+}

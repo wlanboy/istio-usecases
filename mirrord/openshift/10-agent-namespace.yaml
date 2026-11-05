@@ -1,0 +1,29 @@
+# Eigener Namespace fuer die mirrord-Agents. Der Agent braucht die SCC
+# "privileged" (hostPID, hostPath, Capabilities). Die gibt man besser einem
+# dedizierten ServiceAccount in einem eigenen Namespace als dem "default"-SA
+# eines Applikations-Namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mirrord-agents
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mirrord-agent
+  namespace: mirrord-agents
+---
+# entspricht: oc adm policy add-scc-to-user privileged -z mirrord-agent -n mirrord-agents
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mirrord-agent-scc-privileged
+  namespace: mirrord-agents
+subjects:
+  - kind: ServiceAccount
+    name: mirrord-agent
+    namespace: mirrord-agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged

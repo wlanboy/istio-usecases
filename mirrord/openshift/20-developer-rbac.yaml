@@ -1,0 +1,62 @@
+# Rechte fuer die Entwickler-Gruppe ${DEV_GROUP}:
+#  - im Agent-Namespace: Agent-Job starten, Log lesen, Port-Forward
+#  - im Ziel-Namespace: Ziel-Deployment/Pods aufloesen
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mirrord-agent-runner
+  namespace: mirrord-agents
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mirrord-agent-runner
+  namespace: mirrord-agents
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: ${DEV_GROUP}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mirrord-agent-runner
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mirrord-target-reader
+  namespace: mirrordtest
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mirrord-target-reader
+  namespace: mirrordtest
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: ${DEV_GROUP}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mirrord-target-reader

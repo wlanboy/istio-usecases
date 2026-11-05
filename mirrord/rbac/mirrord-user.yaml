@@ -1,0 +1,49 @@
+# Minimale Rechte fuer mirrord OHNE Operator (nur im Namespace mirrordtest).
+# Der ServiceAccount dient hier nur zum Testen; im echten Einsatz bindet man
+# die Role an einen User/eine Gruppe.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mirrord-dev
+  namespace: mirrordtest
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mirrord-user
+  namespace: mirrordtest
+rules:
+  # Ziel aufloesen (deployment/nginx -> Pod)
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Agent als Job starten und wieder entfernen
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # CLI liest das Agent-Log, um den Start abzuwarten
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Verbindung CLI -> Agent per Port-Forward
+  # (ab Kubernetes 1.31 per WebSocket, das braucht "get"; "create" fuer SPDY)
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mirrord-user
+  namespace: mirrordtest
+subjects:
+  - kind: ServiceAccount
+    name: mirrord-dev
+    namespace: mirrordtest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mirrord-user

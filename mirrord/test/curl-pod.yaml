@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl
+  namespace: mirrordtest
+  labels:
+    app: curl
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.0
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
