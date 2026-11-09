@@ -1,0 +1,28 @@
+{
+  "target": {
+    "path": "deployment/nginx",
+    "namespace": "mirrordtest"
+  },
+  "agent": {
+    "namespace": "mirrordtest",
+    "image": "{{ get_env(name="MIRRORD_REGISTRY", default="ghcr.io/metalbear-co") }}/mirrord:3.264.0",
+    "image_pull_policy": "IfNotPresent",
+    "image_pull_secrets": [
+      { "name": "mirrord-registry" }
+    ]
+  },
+  "container": {
+    "cli_image": "{{ get_env(name="MIRRORD_REGISTRY", default="ghcr.io/metalbear-co") }}/mirrord-cli:3.264.0"
+  },
+  "feature": {
+    "network": {
+      "incoming": {
+        "mode": "steal"
+      },
+      "outgoing": true,
+      "dns": true
+    },
+    "fs": "local",
+    "env": true
+  }
+}
