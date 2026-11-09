@@ -52,8 +52,8 @@ DaemonSet. Folgendes muss aber vorhanden sein:
 |---|---|---|
 | `mirrord` CLI | lokal | `curl -fsSL https://raw.githubusercontent.com/metalbear-co/mirrord/main/scripts/install.sh \| bash` |
 | Docker, Podman oder nerdctl | lokal | nur für `mirrord container`. `mirrord exec` für lokale Binaries braucht das nicht |
-| Image `ghcr.io/metalbear-co/mirrord-cli:<version>` | lokal | wird beim ersten `mirrord container` automatisch gepullt. Override: `container.cli_image` |
-| Image `ghcr.io/metalbear-co/mirrord:<version>` | Cluster-Nodes | Agent-Image. Ohne Internetzugang in eine interne Registry spiegeln und `agent.image` sowie ggf. `agent.image_pull_secrets` setzen. Die Version muss zum CLI passen |
+| Image `ghcr.io/metalbear-co/mirrord-cli:<version>` | lokal | wird beim ersten `mirrord container` automatisch gepullt. Override: `container.cli_image`, siehe Abschnitt 6 |
+| Image `ghcr.io/metalbear-co/mirrord:<version>` | Cluster-Nodes | Agent-Image. Ohne Internetzugang in eine interne Registry spiegeln und `agent.image` setzen, siehe Abschnitt 6. Die Version muss zum CLI passen |
 | RBAC für den Entwickler | Cluster | siehe [rbac/mirrord-user.yaml](rbac/mirrord-user.yaml), getestet mit einem ServiceAccount ohne weitere Rechte |
 | Erlaubnis für privilegierte Agent-Pods | Agent-Namespace | `hostPID: true`, hostPath `/run` und `/var`, Capabilities `SYS_ADMIN`, `SYS_PTRACE`, `NET_ADMIN`. Bei Pod Security Admission muss der Agent-Namespace `pod-security.kubernetes.io/enforce: privileged` haben, auf OpenShift die SCC `privileged` (siehe unten) |
 | glibc-basiertes Image für den lokalen Container | lokal | Alpine/musl funktioniert nicht, siehe nächster Abschnitt |
@@ -266,9 +266,13 @@ weiterreichen (wie bei Tracing-Headern).
 
 ## 6. Eigene Images aus interner Registry
 
-Ohne Internetzugang (oder mit Registry-Policy im Cluster) kommen weder die Nodes an
-`ghcr.io/metalbear-co/mirrord` noch der Laptop an `ghcr.io/metalbear-co/mirrord-cli`.
-Beide Images spiegelt man dann in eine eigene Registry und trägt sie in der Config ein.
+Ohne Internetzugang oder mit einer Registry-Policy im Cluster kommen die Nodes nicht an
+`ghcr.io/metalbear-co/mirrord` und der Laptop nicht an `ghcr.io/metalbear-co/mirrord-cli`.
+Dann spiegelt man beide Images in eine eigene Registry und trägt sie in der Config ein.
+
+> `verify-config` akzeptiert die Config mit und ohne `MIRRORD_REGISTRY`. Gegen eine
+> echte interne Registry habe ich den Ablauf nicht getestet.
+
 [mirrord-custom-image.json](mirrord-custom-image.json):
 
 ```json
@@ -292,12 +296,12 @@ Beide Images spiegelt man dann in eine eigene Registry und trägt sie in der Con
 | `agent.image_pull_secrets` | Pull-Secrets für den Agent-Pod. Das Secret muss im Namespace aus `agent.namespace` liegen |
 | `container.cli_image` | intproxy-Image für `mirrord container`. Wird lokal von Docker/Podman gepullt, braucht also ein lokales `docker login` |
 
-Die Registry kommt aus der Umgebungsvariable `MIRRORD_REGISTRY` (Tera-Templating wie in
-Abschnitt 5). Ohne die Variable gelten die Original-Images von `ghcr.io`. Beide Tags
-müssen exakt der CLI-Version entsprechen (`mirrord --version`). Nach einem CLI-Update
-also neu spiegeln und die Tags in der Config anpassen.
+Die Registry kommt aus der Umgebungsvariable `MIRRORD_REGISTRY`, eingesetzt per
+Tera-Templating wie in Abschnitt 5. Ohne die Variable zieht mirrord die Original-Images
+von `ghcr.io`. Beide Tags müssen exakt der Ausgabe von `mirrord --version` entsprechen.
+Nach jedem CLI-Update heißt das neu spiegeln und die Tags in der Config anpassen.
 
-Images spiegeln (einmalig pro mirrord-Version):
+Images einmalig pro mirrord-Version spiegeln:
 
 ```bash
 export MIRRORD_REGISTRY=registry.internal/mirrord
@@ -311,8 +315,9 @@ for img in mirrord mirrord-cli; do
 done
 ```
 
-Pull-Secret im Agent-Namespace anlegen (entfällt bei einer Registry ohne Auth oder wenn
-die Nodes schon Zugangsdaten haben, dann `image_pull_secrets` aus der Config löschen):
+Pull-Secret im Agent-Namespace anlegen. Braucht die Registry keine Anmeldung oder haben
+die Nodes schon Zugangsdaten, entfällt das Secret, und `image_pull_secrets` fliegt aus der
+Config.
 
 ```bash
 kubectl -n mirrordtest create secret docker-registry mirrord-registry \
@@ -342,8 +347,8 @@ docker ps --format '{{.Image}}' | grep mirrord-cli
 ```
 
 Schlägt der Pull im Cluster fehl, hängt der Agent-Pod in `ImagePullBackOff`, und
-`mirrord` bricht nach dem Agent-Timeout ab. Dann
-`kubectl -n mirrordtest describe pod -l app=mirrord` ansehen.
+`mirrord` bricht nach dem Agent-Timeout ab. Die Ursache zeigt
+`kubectl -n mirrordtest describe pod -l app=mirrord`.
 
 ## 7. Mit minimalen Rechten testen
 
