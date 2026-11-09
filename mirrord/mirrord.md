@@ -102,6 +102,7 @@ betrifft nur den lokalen Container. Statisch gelinkte Binaries (z. B. Go mit
 | [local/index.html](local/index.html) | Seite des lokalen Containers: "Antwort vom LOKALEN nginx-Container" |
 | [mirrord.json](mirrord.json) | mirrord-Config: steal, alles |
 | [mirrord-filter.json](mirrord-filter.json) | mirrord-Config: steal nur mit Header `x-mirrord: <$USER>` |
+| [mirrord-custom-image.json](mirrord-custom-image.json) | mirrord-Config: Agent- und CLI-Image aus eigener Registry |
 | [rbac/mirrord-user.yaml](rbac/mirrord-user.yaml) | minimale Rechte + Test-ServiceAccount `mirrord-dev` |
 | [openshift/](openshift/) | Agent-Namespace, SCC-Binding, Entwickler-RBAC und Config für OpenShift |
 
@@ -263,7 +264,88 @@ Der Filter funktioniert mit Istio nur, weil der Agent hinter dem Sidecar abgreif
 Klartext sieht. Damit der Header Aufrufketten überlebt, muss jeder Service ihn
 weiterreichen (wie bei Tracing-Headern).
 
-## 6. Mit minimalen Rechten testen
+## 6. Eigene Images aus interner Registry
+
+Ohne Internetzugang (oder mit Registry-Policy im Cluster) kommen weder die Nodes an
+`ghcr.io/metalbear-co/mirrord` noch der Laptop an `ghcr.io/metalbear-co/mirrord-cli`.
+Beide Images spiegelt man dann in eine eigene Registry und trägt sie in der Config ein.
+[mirrord-custom-image.json](mirrord-custom-image.json):
+
+```json
+"agent": {
+  "namespace": "mirrordtest",
+  "image": "{{ get_env(name="MIRRORD_REGISTRY", default="ghcr.io/metalbear-co") }}/mirrord:3.264.0",
+  "image_pull_policy": "IfNotPresent",
+  "image_pull_secrets": [
+    { "name": "mirrord-registry" }
+  ]
+},
+"container": {
+  "cli_image": "{{ get_env(name="MIRRORD_REGISTRY", default="ghcr.io/metalbear-co") }}/mirrord-cli:3.264.0"
+}
+```
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `agent.image` | Agent-Image, das der Job im Cluster startet. Wird von den Nodes gepullt |
+| `agent.image_pull_policy` | Pull-Policy des Agent-Containers. `IfNotPresent` spart bei jedem Start den Registry-Zugriff |
+| `agent.image_pull_secrets` | Pull-Secrets für den Agent-Pod. Das Secret muss im Namespace aus `agent.namespace` liegen |
+| `container.cli_image` | intproxy-Image für `mirrord container`. Wird lokal von Docker/Podman gepullt, braucht also ein lokales `docker login` |
+
+Die Registry kommt aus der Umgebungsvariable `MIRRORD_REGISTRY` (Tera-Templating wie in
+Abschnitt 5). Ohne die Variable gelten die Original-Images von `ghcr.io`. Beide Tags
+müssen exakt der CLI-Version entsprechen (`mirrord --version`). Nach einem CLI-Update
+also neu spiegeln und die Tags in der Config anpassen.
+
+Images spiegeln (einmalig pro mirrord-Version):
+
+```bash
+export MIRRORD_REGISTRY=registry.internal/mirrord
+VERSION=$(mirrord --version | awk '{print $2}')
+
+docker login registry.internal
+for img in mirrord mirrord-cli; do
+  docker pull ghcr.io/metalbear-co/$img:$VERSION
+  docker tag  ghcr.io/metalbear-co/$img:$VERSION $MIRRORD_REGISTRY/$img:$VERSION
+  docker push $MIRRORD_REGISTRY/$img:$VERSION
+done
+```
+
+Pull-Secret im Agent-Namespace anlegen (entfällt bei einer Registry ohne Auth oder wenn
+die Nodes schon Zugangsdaten haben, dann `image_pull_secrets` aus der Config löschen):
+
+```bash
+kubectl -n mirrordtest create secret docker-registry mirrord-registry \
+  --docker-server=registry.internal \
+  --docker-username=<user> \
+  --docker-password=<token>
+```
+
+Config prüfen und starten:
+
+```bash
+MIRRORD_REGISTRY=registry.internal/mirrord mirrord verify-config mirrord-custom-image.json
+MIRRORD_REGISTRY=registry.internal/mirrord mirrord container -f mirrord-custom-image.json -- \
+  docker run --rm --name nginx-local \
+    -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
+    nginx:1.27
+```
+
+Kontrollieren, welche Images verwendet wurden:
+
+```bash
+kubectl -n mirrordtest get pods -l app=mirrord \
+  -o jsonpath='{.items[*].spec.containers[*].image}{"\n"}'
+# registry.internal/mirrord/mirrord:3.264.0
+docker ps --format '{{.Image}}' | grep mirrord-cli
+# registry.internal/mirrord/mirrord-cli:3.264.0
+```
+
+Schlägt der Pull im Cluster fehl, hängt der Agent-Pod in `ImagePullBackOff`, und
+`mirrord` bricht nach dem Agent-Timeout ab. Dann
+`kubectl -n mirrordtest describe pod -l app=mirrord` ansehen.
+
+## 7. Mit minimalen Rechten testen
 
 So lässt sich prüfen, ob die Role aus [rbac/mirrord-user.yaml](rbac/mirrord-user.yaml)
 reicht, ohne cluster-admin:
@@ -287,7 +369,7 @@ KUBECONFIG=/tmp/kc-mirrord mirrord container -f mirrord.json -- \
 Die Role gilt nur in `mirrordtest`. Deshalb muss `agent.namespace` auf `mirrordtest`
 stehen, sonst scheitert das Anlegen des Agent-Jobs im Default-Namespace.
 
-## 7. mirrord mit OpenShift (`oc`)
+## 8. mirrord mit OpenShift (`oc`)
 
 > Dieser Abschnitt ist nicht gegen ein OpenShift-Cluster getestet. Er überträgt die
 > obigen Ergebnisse auf die OpenShift-Eigenheiten (SCC, SELinux, CRI-O, Istio-CNI über
@@ -393,10 +475,13 @@ oc -n mirrord-agents describe pod -l app=mirrord | grep -i scc
 
 ### Weitere Punkte auf OpenShift
 
-- **Agent-Image aus interner Registry.** Bei eingeschränktem Internetzugang
-  `ghcr.io/metalbear-co/mirrord:<version>` spiegeln und in der Config
-  `"agent": { "image": "<registry>/mirrord:<version>", "image_pull_secrets": [{ "name": "<secret>" }] }`
-  setzen. Version = CLI-Version (`mirrord --version`).
+- **Agent-Image aus interner Registry.** Wie in Abschnitt 6 spiegeln und `agent.image`,
+  `agent.image_pull_secrets` und `container.cli_image` aus
+  [mirrord-custom-image.json](mirrord-custom-image.json) in
+  `openshift/mirrord-openshift.json` übernehmen. Das Pull-Secret gehört in
+  `mirrord-agents`. Alternativ das Secret mit
+  `oc secrets link mirrord-agent mirrord-registry --for=pull -n mirrord-agents` an den
+  ServiceAccount hängen, dann kann `image_pull_secrets` entfallen.
 - **Istio-CNI statt `istio-init`.** Auf OpenShift setzt Istio die iptables-Regeln per
   CNI (Multus). Der mirrord-Agent setzt seine eigenen Regeln zur Laufzeit im
   Netzwerk-Namespace des Pods, das ist davon unabhängig.
@@ -410,6 +495,7 @@ oc -n mirrord-agents describe pod -l app=mirrord | grep -i scc
 
 ```bash
 kubectl delete -f rbac/mirrord-user.yaml --ignore-not-found
+kubectl -n mirrordtest delete secret mirrord-registry --ignore-not-found
 kubectl delete -f test/curl-pod.yaml --ignore-not-found
 kubectl delete -f manifests/ --ignore-not-found     # löscht auch den Namespace mirrordtest
 kubectl get jobs -A | grep mirrord-agent            # sollte leer sein
