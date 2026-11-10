@@ -182,6 +182,85 @@ Mit der Gateway API ist `GRPCRoute` die passende Ressource. Sie matcht direkt au
 Für gRPC-Web aus dem Browser hängt Istio den Envoy-Filter `grpc_web` in die
 HTTP-Filterketten. Die Übersetzung nach gRPC übernimmt also der Proxy.
 
+## Protobuf
+
+Istio braucht für gRPC keine `.proto`-Dateien. Envoy liest nur die HTTP/2-Header,
+also Pfad, Metadaten und den `grpc-status` im Trailer. Den Body mit den
+Protobuf-Nachrichten reicht Envoy unverändert durch und dekodiert ihn nicht.
+
+Daraus folgt:
+
+- Routing, Retries, AuthorizationPolicy und Metriken gehen nur auf Service,
+  Methode und Metadaten. Felder in der Nachricht, etwa eine Kunden-ID im Request,
+  kann Istio weder matchen noch prüfen. Wer danach routen will, schickt den Wert
+  zusätzlich als Metadatum mit.
+- Access-Logs und Traffic Mirroring sehen den Body nur als Binärdaten.
+- Metadaten mit dem Suffix `-bin` sind base64-kodierte Binärwerte. Header-Matches
+  im `VirtualService` vergleichen den base64-String.
+- Protobuf ohne gRPC, etwa `application/x-protobuf` über HTTP/1.1, ist für Istio
+  normaler HTTP-Traffic. Der Port heißt dann `http`.
+- Für Retries puffert Envoy den Request-Body bis zum Buffer-Limit der Verbindung,
+  standardmäßig 1 MiB. Größere Requests wiederholt Envoy nicht.
+
+### JSON-Transcoding am Ingress-Gateway
+
+Erst mit einem Protobuf-Descriptor kann Envoy die Nachrichten lesen. Der Filter
+`grpc_json_transcoder` übersetzt damit REST/JSON-Requests in gRPC-Calls. So
+erreichen Clients ohne gRPC-Bibliothek denselben Service. Istio bietet dafür keine
+eigene API, der Filter kommt per `EnvoyFilter` ans Ingress-Gateway.
+
+Descriptor-Set aus den `.proto`-Dateien erzeugen und base64-kodieren:
+
+```bash
+protoc --include_imports --include_source_info \
+  --descriptor_set_out=greeter.pb greeter.proto
+base64 -w0 greeter.pb
+```
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: grpc-json-transcoder
+  namespace: istio-system
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.grpc_json_transcoder
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_json_transcoder.v3.GrpcJsonTranscoder
+            proto_descriptor_bin: <base64 aus greeter.pb>
+            services:
+              - helloworld.Greeter
+            print_options:
+              always_print_primitive_fields: true
+```
+
+- Ohne `google.api.http`-Annotationen in der `.proto` nimmt der Filter
+  `POST /helloworld.Greeter/SayHello` mit JSON-Body an. Mit Annotationen sind
+  REST-Pfade wie `GET /v1/hello/{name}` möglich.
+- Der Filter schreibt den Pfad auf die gRPC-Methode um, bevor Envoy die Route
+  wählt. Der `VirtualService` am Gateway matcht deshalb auf `/helloworld.Greeter/`.
+- Der Descriptor muss zur deployten Version des Services passen. Bei jeder Änderung
+  an der `.proto` den `EnvoyFilter` neu erzeugen, sonst kennt das Gateway neue
+  Methoden oder Felder nicht.
+- `EnvoyFilter` hängt an Envoy-Interna. Nach Istio-Upgrades prüfen, ob der Patch
+  noch greift: `istioctl proxy-config listener <gateway-pod> -n istio-system -o json | grep grpc_json_transcoder`.
+
 ## Proxyless gRPC
 
 Die gRPC-Bibliothek holt sich Konfiguration direkt per xDS von istiod, ohne
