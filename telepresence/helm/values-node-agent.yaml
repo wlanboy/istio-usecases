@@ -1,0 +1,6 @@
+# Node-Agent-Modus: Der traffic-manager startet pro Intercept einen Job auf dem
+# Node des Ziel-Pods. Der Job wechselt in die Namespaces des Pods, statt einen
+# traffic-agent-Sidecar zu injizieren. Ohne Pod-Neustart, aehnlich wie mirrord.
+# Der Job laeuft privilegiert im Namespace des traffic-managers.
+nodeAgent:
+  enabled: true

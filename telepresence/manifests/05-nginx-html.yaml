@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-html
+  namespace: telepresencetest
+  labels:
+    app: nginx
+data:
+  index.html: |
+    Antwort aus dem CLUSTER (Pod im Namespace telepresencetest)

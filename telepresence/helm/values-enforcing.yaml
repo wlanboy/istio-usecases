@@ -1,0 +1,14 @@
+# Traffic-manager mit erzwungener Autorisierung.
+# Standard ist "permissive": Der Manager prueft per SubjectAccessReview, ob der
+# Aufrufer im Ziel-Namespace pods/portforward (oder telepresence.io/attachments)
+# darf, protokolliert eine Ablehnung aber nur ("not enforced").
+security:
+  authentication:
+    mode: enforcing
+# Nur die Regeln fuer Clients ab 2.32 rendern (kein unscoped pods/portforward,
+# kein pods list im Manager-Namespace).
+clientRbac:
+  legacyAccess: false
+# Node-Agent-Modus wie in values-node-agent.yaml
+nodeAgent:
+  enabled: true

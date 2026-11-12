@@ -1,0 +1,16 @@
+# Envoy oeffnet fuer jeden eingehenden Request eine neue Verbindung zur App.
+# Dadurch greift die NAT-Regel von Telepresence sofort, auch wenn vor dem
+# Intercept schon Keepalive-Verbindungen Envoy -> App bestanden.
+# Nur fuer Entwicklungs-Namespaces gedacht (eine TCP-Verbindung pro Request).
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: nginx-no-inbound-keepalive
+  namespace: telepresencetest
+spec:
+  workloadSelector:
+    labels:
+      app: nginx
+  inboundConnectionPool:
+    http:
+      maxRequestsPerConnection: 1

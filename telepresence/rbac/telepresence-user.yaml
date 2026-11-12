@@ -1,0 +1,65 @@
+# Minimale Rechte fuer einen Telepresence-Client (ab 2.32) gegen einen
+# traffic-manager mit security.authentication.mode=enforcing.
+# Der ServiceAccount dient hier nur zum Testen; im echten Einsatz bindet man
+# die Roles an einen User/eine Gruppe.
+#
+# Achtung: Im Standardmodus "permissive" reicht schon die Role im
+# Manager-Namespace, um Workloads in JEDEM Namespace zu intercepten.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telepresence-dev
+  namespace: telepresencetest
+---
+# Verbindung zum traffic-manager (Port-Forward auf den festen Pod-Namen)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: telepresence-connect
+  namespace: ambassador
+rules:
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    resourceNames: ["traffic-manager-0"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: telepresence-connect
+  namespace: ambassador
+subjects:
+  - kind: ServiceAccount
+    name: telepresence-dev
+    namespace: telepresencetest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: telepresence-connect
+---
+# Intercepts im Ziel-Namespace. pods/portforward ist zugleich die Berechtigung,
+# die der traffic-manager per SubjectAccessReview prueft, und der Weg des
+# Clients zum traffic-agent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: telepresence-attach
+  namespace: telepresencetest
+rules:
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: telepresence-attach
+  namespace: telepresencetest
+subjects:
+  - kind: ServiceAccount
+    name: telepresence-dev
+    namespace: telepresencetest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: telepresence-attach

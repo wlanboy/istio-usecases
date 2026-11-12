@@ -1,0 +1,12 @@
+# Ausgehende Verbindungen des traffic-agents umgehen standardmaessig den
+# istio-proxy (Identity-DNAT per nftables vor Istios OUTPUT-Kette). Dann gehen
+# sie als Klartext ohne Workload-Identitaet raus und scheitern an
+# PeerAuthentication STRICT bzw. an AuthorizationPolicies mit principals.
+# Fuer die hier gelisteten Ziel-Netze laeuft der Agent-Traffic durch Envoy
+# und bekommt mTLS mit der Identitaet des Ziel-Pods.
+# 10.96.0.0/16 = Service-CIDR von kind; im eigenen Cluster anpassen
+# (kubectl get servicecidr kubernetes -o jsonpath='{.spec.cidrs}').
+agent:
+  serviceMesh:
+    dialSubnets:
+      - 10.96.0.0/16
