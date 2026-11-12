@@ -289,6 +289,42 @@ kubectl get mutatingwebhookconfigurations | grep agent-injector
 Der Namespace `ambassador` hat kein `istio-injection`-Label, der traffic-manager läuft
 außerhalb des Meshes. Werte setzt man mit `-f <datei>`, siehe Abschnitte 8 bis 10.
 
+`ambassador` ist nur der Standardname, ein Überbleibsel aus der Zeit, als Ambassador Labs
+Telepresence entwickelt hat. Mit `--manager-namespace` landet der traffic-manager in einem
+eigenen Namespace (getestet mit `telepresence`):
+
+```bash
+telepresence helm install --manager-namespace telepresence
+kubectl -n telepresence get statefulset,pods
+kubectl get mutatingwebhookconfigurations -o name | grep agent-injector
+# mutatingwebhookconfiguration.admissionregistration.k8s.io/agent-injector-webhook-telepresence
+```
+
+Ein Client mit Cluster-Admin-Rechten findet den traffic-manager dann selbst
+(`telepresence status` zeigt `Manager namespace : telepresence`). Ein Entwickler mit den
+minimalen Rechten aus Abschnitt 9 findet ihn nicht und bricht mit `unable to determine the
+traffic-manager namespace` ab. Dann muss man den Namespace bei jedem `connect` mit
+`--manager-namespace telepresence` angeben (getestet) oder ihn laut Doku einmal in der
+kubeconfig hinterlegen (nicht getestet):
+
+```yaml
+clusters:
+  - name: kind-local
+    cluster:
+      server: https://...
+      extensions:
+        - name: telepresence.io
+          extension:
+            cluster:
+              defaultManagerNamespace: telepresence
+```
+
+Alle Dateien in diesem Ordner verwenden `ambassador`. Bei einem anderen Namespace muss man
+ihn in [rbac/telepresence-user.yaml](rbac/telepresence-user.yaml),
+[openshift/10-node-agent-scc.yaml](openshift/10-node-agent-scc.yaml) und den Befehlen
+anpassen. Ohne traffic-manager funktioniert Telepresence nicht. Wer gar nichts dauerhaft im
+Cluster installieren will, bleibt bei mirrord.
+
 ## 3. Verbinden
 
 ```bash
