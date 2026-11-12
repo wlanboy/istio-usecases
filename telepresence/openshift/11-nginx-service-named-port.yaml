@@ -1,0 +1,17 @@
+# Service mit benanntem targetPort. Telepresence leitet dann ueber den
+# Port-Namen um und braucht keinen Init-Container mit NET_ADMIN.
+# Voraussetzung: containerPort im Deployment heisst "http".
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: telepresencetest
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
