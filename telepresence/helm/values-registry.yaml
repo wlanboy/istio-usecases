@@ -1,0 +1,22 @@
+# traffic-manager, traffic-agent und Helm-Hooks aus einer eigenen Registry.
+# Platzhalter ${TP_REGISTRY} vor dem Install ersetzen, z. B.:
+#   sed "s|\${TP_REGISTRY}|registry.internal/telepresenceio|g" helm/values-registry.yaml > /tmp/values-registry.yaml
+# Die Tags folgen der Chart-Version (= Client-Version), hier 2.33.0.
+image:
+  registry: ${TP_REGISTRY}
+  # imagePullSecrets:
+  #   - name: telepresence-registry
+agent:
+  image:
+    # Ohne eigenen Wert nimmt der Agent die Registry des traffic-managers.
+    registry: ${TP_REGISTRY}
+    # pullSecrets muss im Namespace jedes Ziel-Workloads existieren
+    # pullSecrets:
+    #   - name: telepresence-registry
+# Hooks laufen bei "helm uninstall" (Agents entfernen) und beim Upgrade.
+# Standard ist docker.io/busybox:latest und docker.io/curlimages/curl:8.1.1.
+hooks:
+  busybox:
+    registry: ${TP_REGISTRY}
+  curl:
+    registry: ${TP_REGISTRY}

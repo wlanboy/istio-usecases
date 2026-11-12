@@ -1,0 +1,17 @@
+# Telepresence-Client-Konfiguration fuer eine eigene Registry.
+# Verwendung: telepresence --config <diese Datei nach sed> connect --docker ...
+# oder Inhalt nach ~/.config/telepresence/config.yml uebernehmen.
+# Platzhalter ${TP_REGISTRY} ersetzen (siehe readme).
+images:
+  # Daemon-Container fuer "telepresence connect --docker"
+  clientImage: ${TP_REGISTRY}/telepresence:2.33.0
+# Docker-Plugins fuer Volumes (telemount) und Netzwerk (teleroute).
+# Nicht gegen eine eigene Registry getestet, siehe readme.
+# client:
+#   docker:
+#     telemount:
+#       registry: registry.internal
+#       namespace: telepresenceio
+#     teleroute:
+#       registry: registry.internal
+#       namespace: telepresenceio
