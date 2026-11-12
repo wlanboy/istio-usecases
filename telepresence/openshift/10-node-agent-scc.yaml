@@ -1,0 +1,18 @@
+# Nur fuer den Node-Agent-Modus (nodeAgent.enabled=true), nicht getestet.
+# Die Node-Agent-Jobs laufen im Namespace des traffic-managers mit dem
+# ServiceAccount "default" und brauchen hostPID, hostPath /run sowie
+# SYS_ADMIN, SYS_PTRACE, NET_ADMIN, NET_RAW. Das erlaubt nur die SCC privileged.
+# entspricht: oc adm policy add-scc-to-user privileged -z default -n ambassador
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: telepresence-node-agent-scc-privileged
+  namespace: ambassador
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: ambassador
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged

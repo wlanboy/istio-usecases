@@ -1,0 +1,8 @@
+# traffic-manager auf OpenShift (nicht getestet).
+# Das Chart setzt runAsUser: 1000. Die SCC restricted-v2 verlangt eine UID aus
+# dem Bereich des Namespaces und lehnt den Pod sonst ab. Ohne runAsUser
+# vergibt OpenShift die UID selbst.
+securityContext:
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: null

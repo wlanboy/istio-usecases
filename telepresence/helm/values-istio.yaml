@@ -1,9 +1,14 @@
+# ACHTUNG: In Telepresence 2.33.0 bringt dieser Wert den traffic-manager in
+# eine CrashLoop, sobald ein Pod mit so konfiguriertem Agent existiert
+# (panic: cannot handle unexported field ... MeshDialSubnets ... netip.Prefix).
+# Nicht einsetzen, bis das behoben ist. Siehe telepresence.md.
+#
 # Ausgehende Verbindungen des traffic-agents umgehen standardmaessig den
 # istio-proxy (Identity-DNAT per nftables vor Istios OUTPUT-Kette). Dann gehen
 # sie als Klartext ohne Workload-Identitaet raus und scheitern an
 # PeerAuthentication STRICT bzw. an AuthorizationPolicies mit principals.
-# Fuer die hier gelisteten Ziel-Netze laeuft der Agent-Traffic durch Envoy
-# und bekommt mTLS mit der Identitaet des Ziel-Pods.
+# Fuer die hier gelisteten Ziel-Netze soll der Agent-Traffic laut Doku durch
+# Envoy laufen (und damit mTLS bekommen).
 # 10.96.0.0/16 = Service-CIDR von kind; im eigenen Cluster anpassen
 # (kubectl get servicecidr kubernetes -o jsonpath='{.spec.cidrs}').
 agent:
