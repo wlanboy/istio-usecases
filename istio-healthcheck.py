@@ -3,7 +3,7 @@
 istio-cni/ztunnel, Zertifikatslaufzeiten, Proxy-Sync und Sidecar-Injection.
 Nutzt nur die Python-Standardbibliothek (ab 3.9) und `oc` bzw. `kubectl`; istioctl
 wird nicht benoetigt, das Skript laeuft daher auch unter Windows mit oc.exe.
-Der Proxy-Sync-Status wird per `exec` in istiod ueber
+istiocli.py muss im selben Verzeichnis liegen. Der Proxy-Sync-Status wird per `exec` in istiod ueber
 `pilot-discovery request GET /debug/syncz` gelesen (RBAC-Recht `pods/exec` im
 Istio-Namespace). Aus Secrets werden nur Zertifikats-Keys gelesen, keine
 privaten Schluessel.
@@ -20,19 +20,17 @@ Verwendung:
 import argparse
 import base64
 import io
-import json
-import shutil
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional
 
+from istiocli import (XDS_TYPES, Result, detect_cli, fetch_syncz, get_json, print_header, run,
+                      with_context, xds_status)
+
 OK, INFO, WARN, FAIL = "OK", "INFO", "WARN", "FAIL"
 SEVERITY = {OK: 0, INFO: 0, WARN: 1, FAIL: 2}
 
-# (items, fehlermeldung) - bei Fehler ist items leer
-Result = tuple[list, Optional[str]]
 # (status, text)
 Finding = tuple[str, str]
 
@@ -55,46 +53,7 @@ OPENSHIFT_CRD = "clusterversions.config.openshift.io"
 SERVER_CERT_KEYS = ("tls.crt", "cert")
 CA_CERT_KEYS = ("ca.crt", "cacert")
 
-XDS_TYPES = (("CDS", "cluster"), ("LDS", "listener"), ("EDS", "endpoint"), ("RDS", "route"))
 MAX_LISTED = 5
-TIMEOUT = 120
-
-
-def run(cmd: list[str]) -> tuple[int, str, str]:
-    """Fuehrt cmd aus und liefert (returncode, stdout, stderr)."""
-    try:
-        # oc liefert UTF-8; ohne explizites encoding nimmt Windows cp1252
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=TIMEOUT)
-    except FileNotFoundError:
-        return 127, "", f"Befehl nicht gefunden: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"Timeout nach {TIMEOUT}s: {' '.join(cmd[1:4])} ..."
-    return proc.returncode, proc.stdout, proc.stderr
-
-
-def with_context(binary: str, context: Optional[str]) -> list[str]:
-    return [binary, "--context", context] if context else [binary]
-
-
-def detect_cli(preferred: Optional[str]) -> str:
-    """oc bevorzugen, sonst kubectl. which() liefert unter Windows den Pfad zu oc.exe."""
-    for binary in [preferred] if preferred else ["oc", "kubectl"]:
-        path = shutil.which(binary)
-        if path:
-            return path
-    return preferred or "oc"
-
-
-def get_json(kubectl: list[str], *args: str) -> Result:
-    rc, out, err = run(kubectl + ["get", *args, "-o", "json"])
-    if rc != 0:
-        return [], (err or out).strip()
-    try:
-        data = json.loads(out)
-    except json.JSONDecodeError:
-        return [], "ungueltiges JSON erhalten"
-    return data["items"] if "items" in data else [data], None
 
 
 def get_scoped(kubectl: list[str], resource: str, namespaces: Optional[list[str]]) -> Result:
@@ -128,28 +87,6 @@ def get_pem_fields(kubectl: list[str], kind: str, namespace: str, name: str,
         if value.strip():
             fields[key] = base64.b64decode(value).decode("utf-8", "replace") if kind == "secret" else value
     return fields, None
-
-
-def fetch_syncz(kubectl: list[str], istio_namespace: str) -> tuple[list, list[str]]:
-    """Fragt jeden laufenden istiod-Pod ab - jeder kennt nur die bei ihm verbundenen Proxys.
-    Liefert (eintraege, fehler je istiod-Pod)."""
-    pods, err = get_json(kubectl, "pods", "-n", istio_namespace, "-l", "app=istiod")
-    if err:
-        return [], [err]
-    names = [meta(p)["name"] for p in pods if p.get("status", {}).get("phase") == "Running"]
-    if not names:
-        return [], [f"kein laufender istiod-Pod (app=istiod) in Namespace {istio_namespace}"]
-    entries, errors = [], []
-    for name in names:
-        rc, out, err = run(kubectl + ["exec", "-n", istio_namespace, name, "--",
-                                      "pilot-discovery", "request", "GET", "/debug/syncz"])
-        try:
-            if rc != 0:
-                raise ValueError((err or out).strip())
-            entries += [dict(e, istiod=name) for e in json.loads(out) or []]
-        except ValueError as e:  # JSONDecodeError ist eine Unterklasse
-            errors.append(f"{name}: {e}")
-    return entries, errors
 
 
 # --- Hilfsfunktionen fuer Kubernetes-Objekte ---------------------------
@@ -486,14 +423,6 @@ def check_certificates(root_cert: tuple[dict, Optional[str]], ca_secrets: list[t
     return findings
 
 
-def xds_status(entry: dict, prefix: str) -> str:
-    """Gleiche Logik wie istioctl proxy-status: gesendet == bestaetigt -> SYNCED."""
-    sent = entry.get(f"{prefix}_sent", "")
-    if not sent:
-        return "NOT SENT"
-    return "SYNCED" if sent == entry.get(f"{prefix}_acked", "") else "STALE"
-
-
 def check_sync(syncz: tuple[list, list[str]], pods: Result, istio_ns: str) -> list[Finding]:
     entries, errors = syncz
     findings = [(WARN, f"Sync-Status nicht lesbar (benoetigt pods/exec in {istio_ns}): {e}") for e in errors]
@@ -602,11 +531,6 @@ def check_dataplane(namespaces: Result, pods: Result, deployments: Result, valid
 
 
 # --- Ausgabe -----------------------------------------------------------
-
-def print_header(title: str) -> None:
-    print()
-    print(f"--- {title} " + "-" * max(1, 50 - len(title)))
-
 
 def print_findings(title: str, findings: list[Finding], problems_only: bool) -> None:
     shown = [f for f in findings if not problems_only or SEVERITY[f[0]] > 0]

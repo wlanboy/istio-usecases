@@ -2,19 +2,26 @@
 """Zeigt fuer einen Namespace, was per Istio exponiert ist: Gateways, Hosts,
 VirtualServices, DestinationRules (inkl. TLS), ServiceEntries, PeerAuthentication
 und den Sidecar-Sync-Status. Nutzt nur die Python-Standardbibliothek (ab 3.9) und
-ruft `kubectl` (oder `oc`) und `istioctl` als externe Befehle auf.
+`oc` oder `kubectl`; istiocli.py muss im selben Verzeichnis liegen.
+
+Ist `istioctl` im PATH, kommt der Sync-Status aus `istioctl proxy-status` und am Ende
+laeuft `istioctl analyze`. Ohne istioctl (oder mit --no-istioctl) liest das Skript den
+Sync-Status per `exec` in jedem istiod-Pod ueber `pilot-discovery request GET /debug/syncz`
+(RBAC-Recht `pods/exec` im istiod-Namespace), analyze entfaellt dann.
 
 Verwendung:
-    python3 istio-inspect.py <namespace> [--context CONTEXT] [--cli kubectl|oc] [--no-analyze]
+    python3 istio-inspect.py <namespace> [--context CONTEXT] [--cli oc|kubectl]
+                             [--istio-namespace istio-system] [--no-istioctl] [--no-analyze]
 """
 
 import argparse
-import json
 import shutil
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Iterable, Optional
+
+from istiocli import (XDS_TYPES, Result, detect_cli, fetch_syncz, get_json, print_header, run,
+                      with_context, xds_status)
 
 # Voll qualifizierte Ressourcennamen, damit z.B. "gateway" nicht mit der
 # Kubernetes Gateway API (gateway.networking.k8s.io) verwechselt wird.
@@ -31,51 +38,14 @@ RESOURCES = {
     "routes": "routes.route.openshift.io",
 }
 
-# (items, fehlermeldung) - bei Fehler ist items leer
-Result = tuple[list, Optional[str]]
 RowFn = Callable[[dict], Iterable[list]]
-
-
-def run(cmd: list[str]) -> tuple[int, str, str]:
-    """Fuehrt cmd aus und liefert (returncode, stdout, stderr)."""
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError:
-        return 127, "", f"Befehl nicht gefunden: {cmd[0]}"
-    return proc.returncode, proc.stdout, proc.stderr
-
-
-def with_context(binary: str, context: Optional[str]) -> list[str]:
-    return [binary, "--context", context] if context else [binary]
-
-
-def detect_cli(preferred: Optional[str]) -> str:
-    """kubectl bevorzugen, sonst oc; beide verstehen dieselben get/exec-Aufrufe."""
-    if preferred:
-        return preferred
-    return next((b for b in ("kubectl", "oc") if shutil.which(b)), "kubectl")
 
 
 def is_missing_api(err: Optional[str]) -> bool:
     return bool(err) and "doesn't have a resource type" in err
 
 
-def kubectl_json(kubectl: list[str], resource: str, namespace: str, *extra: str) -> Result:
-    rc, out, err = run(kubectl + ["get", resource, "-n", namespace, "-o", "json", *extra])
-    if rc != 0:
-        return [], (err or out).strip()
-    try:
-        return json.loads(out).get("items", []), None
-    except json.JSONDecodeError:
-        return [], "ungueltiges JSON von kubectl erhalten"
-
-
 # --- Ausgabe -----------------------------------------------------------
-
-def print_header(title: str) -> None:
-    print()
-    print(f"--- {title} " + "-" * max(1, 50 - len(title)))
-
 
 def print_indented(text: str) -> None:
     print("\n".join(f"  {line}" for line in text.splitlines()))
@@ -192,7 +162,7 @@ def route_rows(rt: dict):
 
 # --- Sektionen ohne Tabelle --------------------------------------------
 
-def section_proxy_status(result: tuple[int, str, str], namespace: str) -> None:
+def section_proxy_status_istioctl(result: tuple[int, str, str], namespace: str) -> None:
     print_header("istioctl proxy-status (Sync mit istiod)")
     rc, out, err = result
     if rc != 0:
@@ -201,6 +171,28 @@ def section_proxy_status(result: tuple[int, str, str], namespace: str) -> None:
     lines = [l for l in out.splitlines() if f".{namespace} " in l or l.startswith("NAME")]
     if len(lines) > 1:
         print_indented("\n".join(lines))
+    else:
+        print("  (keine Proxys in diesem Namespace gefunden)")
+
+
+def section_proxy_status_syncz(result: tuple[list, list[str]], namespace: str) -> None:
+    print_header("Proxy-Sync-Status (istiod /debug/syncz)")
+    items, errors = result
+    # Fehler einzelner istiod-Pods immer zeigen: deren Proxys fehlen sonst unbemerkt in der Tabelle
+    for err in errors:
+        print(f"  Fehler: {err}")
+    if not items and errors:
+        return
+    rows = []
+    for entry in items:
+        proxy = entry.get("proxy", "")
+        if not proxy.endswith(f".{namespace}"):
+            continue
+        rows.append([proxy, entry.get("cluster_id", "-"), entry["istiod"],
+                     *(xds_status(entry, prefix) for _, prefix in XDS_TYPES),
+                     entry.get("istio_version", "-")])
+    if rows:
+        print_table(["NAME", "CLUSTER", "ISTIOD", *(t for t, _ in XDS_TYPES), "VERSION"], rows)
     else:
         print("  (keine Proxys in diesem Namespace gefunden)")
 
@@ -251,34 +243,42 @@ def section_analyze(result: tuple[int, str, str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("namespace", help="zu untersuchender Kubernetes-Namespace")
-    parser.add_argument("--context", help="kubectl/oc/istioctl Context (optional)")
-    parser.add_argument("--cli", choices=("kubectl", "oc"), help="Kubernetes-CLI (Default: kubectl, sonst oc)")
+    parser.add_argument("--context", help="oc/kubectl/istioctl Context (optional)")
+    parser.add_argument("--cli", choices=("oc", "kubectl"), help="Kubernetes-CLI (Default: oc, sonst kubectl)")
+    parser.add_argument("--istio-namespace", default="istio-system", help="Namespace von istiod (Default: istio-system)")
+    parser.add_argument("--no-istioctl", action="store_true",
+                        help="istioctl nicht verwenden, Sync-Status per exec in istiod lesen")
     parser.add_argument("--no-analyze", action="store_true", help="istioctl analyze ueberspringen (kann dauern)")
     args = parser.parse_args()
     ns = args.namespace
 
     cli = detect_cli(args.cli)
-    for binary in (cli, "istioctl"):
-        if not shutil.which(binary):
-            print(f"Warnung: '{binary}' nicht im PATH gefunden.", file=sys.stderr)
-
+    if not shutil.which(cli):
+        print(f"Warnung: '{cli}' nicht im PATH gefunden.", file=sys.stderr)
     kubectl = with_context(cli, args.context)
+    use_istioctl = not args.no_istioctl and shutil.which("istioctl") is not None
     istioctl = with_context("istioctl", args.context)
 
     # Alle Abfragen parallel starten, Ausgabe erfolgt danach in fester Reihenfolge
     with ThreadPoolExecutor(max_workers=len(RESOURCES) + 2) as pool:
-        futures = {key: pool.submit(kubectl_json, kubectl, res, ns) for key, res in RESOURCES.items()}
-        proxy_future = pool.submit(run, istioctl + ["proxy-status"])
-        analyze_future = None if args.no_analyze else pool.submit(run, istioctl + ["analyze", "-n", ns])
+        futures = {key: pool.submit(get_json, kubectl, res, "-n", ns) for key, res in RESOURCES.items()}
+        proxy_future = pool.submit(run, istioctl + ["proxy-status", "--istioNamespace", args.istio_namespace]) \
+            if use_istioctl else None
+        syncz_future = None if use_istioctl else pool.submit(fetch_syncz, kubectl, args.istio_namespace)
+        analyze_future = pool.submit(run, istioctl + ["analyze", "-n", ns]) \
+            if use_istioctl and not args.no_analyze else None
         data = {key: f.result() for key, f in futures.items()}
 
         print("=" * 60)
-        print(f"Namespace: {ns}")
+        print(f"Namespace: {ns}  CLI: {kubectl[0]}  Sync-Status: {'istioctl' if use_istioctl else 'exec in istiod'}")
         print("=" * 60)
 
         print_section("Pods & Sidecar-Status", data["pods"],
                       ["NAME", "READY", "SIDECAR"], pod_rows)
-        section_proxy_status(proxy_future.result(), ns)
+        if proxy_future:
+            section_proxy_status_istioctl(proxy_future.result(), ns)
+        if syncz_future:
+            section_proxy_status_syncz(syncz_future.result(), ns)
         print_section("Services", data["services"],
                       ["NAME", "TYPE", "CLUSTER-IP", "PORTS", "SELECTOR"], service_rows)
         print_section("Gateways", data["gateways"],
