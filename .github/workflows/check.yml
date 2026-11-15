@@ -26,5 +26,8 @@ jobs:
       - name: VirtualService-Analyse offline testen
         run: uv run vs/test.sh --offline
 
+      - name: Tests der Diagnose-Skripte
+        run: uv run pytest
+
       - name: Typprüfung
         run: uv run pyright
