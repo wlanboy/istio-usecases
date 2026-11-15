@@ -21,8 +21,15 @@ spec:
       serviceAccountName: backend
       containers:
         - name: nginx
-          # unprivileged Image: lauscht bereits ohne weitere Konfiguration auf Port 8080
-          image: nginxinc/nginx-unprivileged:1.27-alpine
+          # unprivileged Image: lauscht ohne weitere Konfiguration auf Port 8080
+          image: nginxinc/nginx-unprivileged:1.30-trixie
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8080
           resources:
