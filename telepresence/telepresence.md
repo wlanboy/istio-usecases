@@ -24,7 +24,7 @@ Im Standardfall läuft der Agent als Sidecar im Ziel-Pod:
 ```
 curl-Pod (Mesh) --mTLS--> nginx-Pod (wird beim ersten Intercept neu gestartet)
                            ├─ istio-proxy (terminiert mTLS)
-                           │     └─ nftables-Redirect Port 80 -> 9900
+                           │     └─ nftables-Redirect Port 8080 -> 9900
                            ├─ traffic-agent (Sidecar, Port 9900)
                            │        │
                            │        ▼  Port-Forward über die Kube-API
@@ -59,7 +59,7 @@ traffic-manager (StatefulSet in "ambassador", dauerhaft)
   ```
 
   Istio leitet eingehende Verbindungen zuerst auf Envoy (15006) um. Envoy terminiert mTLS
-  und verbindet sich mit `<Pod-IP>:80`. Diese Verbindung fängt die `output`-Kette ab
+  und verbindet sich mit `<Pod-IP>:8080`. Diese Verbindung fängt die `output`-Kette ab
   (Priorität vor Istios `OUTPUT`) und leitet sie auf den Agent-Port 9900. Der Agent sieht
   also Klartext-HTTP hinter dem Sidecar, wie bei mirrord. mTLS und AuthorizationPolicies
   gelten weiter, und HTTP-Filter funktionieren.
@@ -93,7 +93,7 @@ gestartet. Das entspricht dem Ansatz von mirrord.
 | privilegierte Pods im Manager-Namespace | `ambassador` | nur Node-Agent-Modus: `hostPID`, hostPath `/run`, `SYS_ADMIN`, `SYS_PTRACE`, `NET_ADMIN`, `NET_RAW` |
 
 Anders als bei mirrord ist das lokale Image egal. Telepresence nutzt kein `LD_PRELOAD`,
-deshalb funktioniert `nginx:1.27-alpine` auch lokal (getestet).
+deshalb funktionieren lokal auch Alpine-Images (getestet mit `nginx:1.27-alpine`).
 
 ## Vergleich mit mirrord (beide ohne Operator)
 
@@ -142,7 +142,7 @@ Verbindungen. Was vor dem Intercept aufgebaut wurde, geht weiter an den Cluster-
 Im Sidecar-Modus läuft zwar jede Verbindung durch den Agent, er entscheidet aber pro
 TCP-Verbindung, nicht pro Request. Eine Verbindung, die er ohne aktiven Intercept an die
 App weitergereicht hat, bleibt dort. Im Node-Agent-Modus kommen die alten Verbindungen
-gar nicht erst am Agent vorbei (`ss` im Pod zeigte `envoy -> <Pod-IP>:80` direkt).
+gar nicht erst am Agent vorbei (`ss` im Pod zeigte `envoy -> <Pod-IP>:8080` direkt).
 nginx schließt Keepalive-Verbindungen erst nach 75 s Leerlauf, bei laufendem Traffic also
 nie.
 
@@ -242,8 +242,8 @@ permitted to create pods/portforward in namespace telepresence-other
 |---|---|
 | [manifests/00-namespace.yaml](manifests/00-namespace.yaml) | Namespace `telepresencetest` mit `istio-injection: enabled` |
 | [manifests/05-nginx-html.yaml](manifests/05-nginx-html.yaml) | ConfigMap mit `index.html` „Antwort aus dem CLUSTER“ |
-| [manifests/10-nginx-deployment.yaml](manifests/10-nginx-deployment.yaml) | `nginx:1.27-alpine`, 1 Replica, Port 80 (`name: http`) |
-| [manifests/11-nginx-service.yaml](manifests/11-nginx-service.yaml) | Service `nginx` Port 80, numerischer `targetPort` |
+| [manifests/10-nginx-deployment.yaml](manifests/10-nginx-deployment.yaml) | `nginxinc/nginx-unprivileged:1.30-trixie`, 1 Replica, Port 8080 (`name: http`), ohne root |
+| [manifests/11-nginx-service.yaml](manifests/11-nginx-service.yaml) | Service `nginx` Port 80, numerischer `targetPort` 8080 |
 | [test/curl-pod.yaml](test/curl-pod.yaml) | Test-Client im Mesh |
 | [test/other-namespace.yaml](test/other-namespace.yaml) | Namespace `telepresence-other` mit Deployment `echo` für Fund 4 |
 | [local/index.html](local/index.html) | Seite des lokalen Containers: „Antwort vom LOKALEN nginx-Container“ |
@@ -340,19 +340,19 @@ Kontext und Namespace). Welche Namespaces der Client sieht, steuert `--mapped-na
 ## 4. Intercept mit lokalem Container
 
 ```bash
-telepresence intercept nginx --port 80 --mount=false --docker-run -- \
+telepresence intercept nginx --port 8080 --mount=false --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 # Using Deployment nginx
 #    Intercept name: nginx
 #    State         : ACTIVE
 #    Intercepting  : 10.244.1.13 -> nginx-local
-#        80 -> 80 TCP
+#        8080 -> 8080 TCP
 ```
 
 Nach `--docker-run --` folgen `docker run`-Argumente. Mit dem Daemon im Container ist
-`--port 80` der Port im lokalen Container. Telepresence übergibt die Umgebungsvariablen
+`--port 8080` der Port im lokalen Container. Telepresence übergibt die Umgebungsvariablen
 des Pods (`NGINX_SERVICE_HOST`, ...) und setzt `TELEPRESENCE_*`-Variablen.
 
 In einem zweiten Terminal prüft man das Ergebnis:
@@ -392,10 +392,10 @@ und damit Root-Rechte (nicht getestet).
 Der Cluster-Pod antwortet weiter, der lokale Container bekommt eine Kopie.
 
 ```bash
-telepresence wiretap nginx --port 80 --mount=false --docker-run -- \
+telepresence wiretap nginx --port 8080 --mount=false --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n telepresencetest exec curl -c curl -- curl -s http://nginx/
 # Antwort aus dem CLUSTER (Pod im Namespace telepresencetest)
@@ -406,11 +406,11 @@ docker logs nginx-local 2>&1 | tail -1
 ## 6. Nur markierte Requests umleiten (HTTP-Filter)
 
 ```bash
-telepresence intercept nginx --port 80 --mount=false \
+telepresence intercept nginx --port 8080 --mount=false \
   --http-header "x-telepresence=$USER" --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n telepresencetest exec curl -c curl -- curl -s http://nginx
 # Antwort aus dem CLUSTER (Pod im Namespace telepresencetest)
@@ -432,7 +432,7 @@ Container, `--port` entfällt.
 telepresence replace nginx --mount=false --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n telepresencetest get pod -l app=nginx \
   -o jsonpath='{range .items[*].spec.containers[*]}{.name}{"\n"}{end}'
@@ -449,10 +449,10 @@ telepresence helm upgrade -f helm/values-node-agent.yaml
 telepresence uninstall nginx     # Pod darf keinen Sidecar-Agent haben
 telepresence quit && telepresence connect --docker -n telepresencetest
 
-telepresence intercept nginx --node-agent --port 80 --mount=false --docker-run -- \
+telepresence intercept nginx --node-agent --port 8080 --mount=false --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n telepresencetest get pods      # nginx-Pod unverändert 2/2, kein Neustart
 kubectl -n ambassador get jobs,pods
@@ -506,10 +506,10 @@ KUBECONFIG=/tmp/kc-tp kubectl config set-context --current --user=telepresence-d
 
 telepresence quit -s
 KUBECONFIG=/tmp/kc-tp telepresence connect --docker -n telepresencetest --manager-namespace ambassador
-KUBECONFIG=/tmp/kc-tp telepresence intercept nginx --node-agent=false --port 80 --mount=false --docker-run -- \
+KUBECONFIG=/tmp/kc-tp telepresence intercept nginx --node-agent=false --port 8080 --mount=false --docker-run -- \
   --rm --name nginx-local \
   -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-  nginx:1.27
+  nginxinc/nginx-unprivileged:1.30-trixie
 ```
 
 - `--manager-namespace ambassador` ist nötig, sonst bricht `connect` mit `unable to
@@ -605,11 +605,11 @@ Der benannte `targetPort` ist auf kind mit Istio getestet:
 
 ```bash
 kubectl apply -f openshift/11-nginx-service-named-port.yaml   # targetPort: http
-telepresence intercept nginx --node-agent=false --port 80 --mount=false -- true
+telepresence intercept nginx --node-agent=false --port 8080 --mount=false -- true
 kubectl -n telepresencetest get pod -l app=nginx \
   -o jsonpath='{.items[0].spec.initContainers[*].name}{"\n"}{range .items[0].spec.containers[*]}{.name}: {.ports}{"\n"}{end}'
 # istio-init istio-proxy                                       <- kein tel-agent-init
-# nginx: [{"containerPort":80,"name":"tm-http","protocol":"TCP"}]
+# nginx: [{"containerPort":8080,"name":"tm-http","protocol":"TCP"}]
 # traffic-agent: [{"containerPort":9900,"name":"http","protocol":"TCP"}]
 kubectl -n telepresencetest get endpointslices -l kubernetes.io/service-name=nginx \
   -o jsonpath='{.items[0].ports}{"\n"}'
