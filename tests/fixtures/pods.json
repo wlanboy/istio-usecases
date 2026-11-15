@@ -1,0 +1,41 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "metadata": {"name": "istio-ingressgateway-abc", "namespace": "istio-ingress",
+                   "labels": {"istio": "ingressgateway", "app": "istio-ingressgateway"}},
+      "spec": {"containers": [{"name": "istio-proxy", "image": "docker.io/istio/proxyv2:1.28.0"}]},
+      "status": {"phase": "Running"}
+    },
+    {
+      "metadata": {"name": "internal-gw-1", "namespace": "gw-one", "labels": {"istio": "internal-gateway"}},
+      "spec": {"containers": [{"name": "istio-proxy", "image": "docker.io/istio/proxyv2:1.28.0"}]},
+      "status": {"phase": "Running"}
+    },
+    {
+      "metadata": {"name": "internal-gw-2", "namespace": "gw-two", "labels": {"istio": "internal-gateway"}},
+      "spec": {"containers": [{"name": "istio-proxy", "image": "docker.io/istio/proxyv2:1.28.0"}]},
+      "status": {"phase": "Running"}
+    },
+    {
+      "metadata": {"name": "internal-gw-3", "namespace": "gw-two", "labels": {"istio": "internal-gateway"}},
+      "spec": {"containers": [{"name": "istio-proxy", "image": "docker.io/istio/proxyv2:1.28.0"}]},
+      "status": {"phase": "Running"}
+    },
+    {
+      "metadata": {"name": "web-1", "namespace": "app-default", "labels": {"app": "web"}},
+      "spec": {
+        "initContainers": [{"name": "istio-proxy", "image": "docker.io/istio/proxyv2:1.28.0",
+                            "restartPolicy": "Always"}],
+        "containers": [{"name": "web", "image": "nginxinc/nginx-unprivileged:1.29"}]
+      },
+      "status": {"phase": "Running"}
+    },
+    {
+      "metadata": {"name": "web-2", "namespace": "app-default", "labels": {"app": "web"}},
+      "spec": {"containers": [{"name": "web", "image": "nginxinc/nginx-unprivileged:1.29"}]},
+      "status": {"phase": "Running"}
+    }
+  ]
+}
