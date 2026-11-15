@@ -94,6 +94,8 @@ indem man es ins Mesh verlagert statt in jede einzelne Anwendung.
 [`istio-healthcheck.py`](istio-healthcheck.py) prüft eine Istio-Installation
 clusterweit. Es braucht nur Python ab 3.9 und `oc` oder `kubectl`. `istioctl` und
 pip-Pakete sind nicht nötig, das Skript läuft also auch unter Windows mit `oc.exe`.
+Die gemeinsamen Hilfsfunktionen liegen in [`istiocli.py`](istiocli.py), die Datei muss
+neben dem Skript liegen.
 
 Das Skript prüft:
 
@@ -153,6 +155,64 @@ Diese Befehle führt das Skript intern aus, `<cli>` steht für `oc` oder `kubect
       -o 'jsonpath={.data.tls\.crt}{"|"}{.data.cert}{"|"}{.data.ca\.crt}{"|"}{.data.cacert}'
 <cli> get pods -n istio-system -l app=istiod -o json
 <cli> exec -n istio-system <istiod-pod> -- pilot-discovery request GET /debug/syncz
+```
+
+## Namespace-Inspektion
+
+[`istio-inspect.py`](istio-inspect.py) zeigt für einen Namespace, was über Istio
+erreichbar ist: Pods mit Sidecar-Status, Services, Gateways, VirtualServices,
+DestinationRules, ServiceEntries, PeerAuthentication, AuthorizationPolicies und auf
+OpenShift auch Routes. Am Ende fasst es zusammen, welche Hosts nach außen offen
+sind. Wie der Healthcheck braucht es nur Python ab 3.9, `oc` oder `kubectl` und
+[`istiocli.py`](istiocli.py) im selben Verzeichnis.
+
+Den Sync-Status der Proxys holt das Skript auf einem von zwei Wegen:
+
+- Mit `istioctl` im PATH ruft es `istioctl proxy-status` auf und am Ende
+  `istioctl analyze` für den Namespace.
+- Ohne `istioctl` oder mit `--no-istioctl` liest es `/debug/syncz` per `exec`
+  aus jedem istiod-Pod. Dafür braucht es das Recht `pods/exec` im
+  Istio-Namespace. `istioctl analyze` fällt in diesem Fall weg.
+
+Antwortet ein istiod-Pod nicht, zeigt das Skript den Fehler über der Tabelle an.
+Die Proxys, die mit diesem Pod verbunden sind, fehlen dann in der Liste.
+
+```bash
+# istioctl verwenden, falls vorhanden
+python3 istio-inspect.py my-app
+
+# anderer Context, ohne istioctl analyze
+python3 istio-inspect.py my-app --context my-cluster --no-analyze
+
+# ohne istioctl, istiod in einem anderen Namespace
+python3 istio-inspect.py my-app --no-istioctl --istio-namespace istio-system-canary
+
+# kubectl statt oc
+python3 istio-inspect.py my-app --cli kubectl
+```
+
+Diese Befehle führt das Skript intern aus, `<cli>` steht für `oc` oder `kubectl`:
+
+```bash
+<cli> get <ressource> -n my-app -o json     # pods, services, gateways, virtualservices,
+                                            # destinationrules, serviceentries,
+                                            # peerauthentications, authorizationpolicies, routes
+# mit istioctl
+istioctl proxy-status --istioNamespace istio-system
+istioctl analyze -n my-app
+# ohne istioctl
+<cli> get pods -n istio-system -l app=istiod -o json
+<cli> exec -n istio-system <istiod-pod> -- pilot-discovery request GET /debug/syncz
+```
+
+## Tests
+
+Für die Funktionen von Healthcheck und `istiocli.py`, die ohne Cluster auskommen,
+liegen pytest-Tests unter [`tests/`](tests/). Die Test-Zertifikate in `tests/fixtures/` haben feste
+Ablaufdaten (UTCTime 2030, GeneralizedTime 2055). Die Tests brauchen keinen Cluster.
+
+```bash
+uv run pytest
 ```
 
 ## Voraussetzungen

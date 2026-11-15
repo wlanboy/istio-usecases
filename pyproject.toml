@@ -17,4 +17,8 @@ package = false
 [dependency-groups]
 dev = [
     "pyright>=1.1.414",
+    "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
