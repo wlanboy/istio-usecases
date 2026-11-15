@@ -33,7 +33,7 @@ curl-Pod (Mesh) --mTLS--> nginx-Pod
   Container, in den die Bibliothek `libmirrord_layer.so` per `LD_PRELOAD` geladen wird.
 - Im Cluster legt mirrord einen kurzlebigen Job `mirrord-agent-<id>` auf dem Node des
   Ziel-Pods an. Der Agent wechselt in den Netzwerk-Namespace des Ziel-Pods und setzt
-  dort iptables-Regeln für Port 80.
+  dort iptables-Regeln für Port 8080.
 - Der Agent erkennt Istio automatisch (`MIRRORD_AGENT_IN_SERVICE_MESH=true` in der
   Agent-Pod-Spec) und greift den Traffic erst nach dem `istio-proxy` ab. Der lokale
   Container bekommt also Klartext-HTTP. mTLS und AuthorizationPolicies des Meshes gelten
@@ -86,8 +86,8 @@ Error relocating /opt/mirrord/lib/libmirrord_layer.so: __res_init: symbol not fo
 `libmirrord_layer.so` ist gegen glibc gebaut und wird per `LD_PRELOAD` in den
 Container-Prozess geladen. Alpine nutzt musl, dort fehlen der glibc-Loader und die
 Symbole. Abhilfe schafft ein glibc-basiertes Image wie Debian, Ubuntu oder UBI, hier
-`nginx:1.27`. Das Cluster-Deployment darf weiterhin Alpine nutzen, die Einschränkung
-betrifft nur den lokalen Container. Statisch gelinkte Binaries (z. B. Go mit
+`nginxinc/nginx-unprivileged:1.30-trixie` (Debian), dasselbe Image wie im Cluster-Deployment. Die
+Einschränkung betrifft nur den lokalen Container. Statisch gelinkte Binaries (z. B. Go mit
 `CGO_ENABLED=0`) haben ein ähnliches Problem, weil `LD_PRELOAD` dort nicht greift.
 
 ## Dateien
@@ -96,8 +96,8 @@ betrifft nur den lokalen Container. Statisch gelinkte Binaries (z. B. Go mit
 |---|---|
 | [manifests/00-namespace.yaml](manifests/00-namespace.yaml) | Namespace `mirrordtest` mit `istio-injection: enabled` |
 | [manifests/05-nginx-html.yaml](manifests/05-nginx-html.yaml) | ConfigMap mit `index.html` "Antwort aus dem CLUSTER" |
-| [manifests/10-nginx-deployment.yaml](manifests/10-nginx-deployment.yaml) | `nginx:1.27-alpine`, 1 Replica, Port 80 |
-| [manifests/11-nginx-service.yaml](manifests/11-nginx-service.yaml) | Service `nginx` Port 80 |
+| [manifests/10-nginx-deployment.yaml](manifests/10-nginx-deployment.yaml) | `nginxinc/nginx-unprivileged:1.30-trixie`, 1 Replica, Port 8080, ohne root |
+| [manifests/11-nginx-service.yaml](manifests/11-nginx-service.yaml) | Service `nginx` Port 80 auf `targetPort` 8080 |
 | [test/curl-pod.yaml](test/curl-pod.yaml) | Test-Client im Mesh |
 | [local/index.html](local/index.html) | Seite des lokalen Containers: "Antwort vom LOKALEN nginx-Container" |
 | [mirrord.json](mirrord.json) | mirrord-Config: steal, alles |
@@ -182,7 +182,7 @@ also auf.
 mirrord container -f mirrord.json -- \
   docker run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-    nginx:1.27
+    nginxinc/nginx-unprivileged:1.30-trixie
 ```
 
 Mit Podman lautet der Aufruf `mirrord container -f mirrord.json -- podman run ...`.
@@ -219,7 +219,7 @@ sed 's/"steal"/"mirror"/' mirrord.json > /tmp/mirrord-mirror.json
 mirrord container -f /tmp/mirrord-mirror.json -- \
   docker run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-    nginx:1.27
+    nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n mirrordtest exec curl -c curl -- curl -s http://nginx/mirror-test
 # Antwort kommt vom Cluster-Pod; im Log von nginx-local erscheint parallel:
@@ -252,7 +252,7 @@ melden die Datei als ungültiges JSON, `mirrord verify-config` akzeptiert sie.
 mirrord container -f mirrord-filter.json -- \
   docker run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-    nginx:1.27
+    nginxinc/nginx-unprivileged:1.30-trixie
 
 kubectl -n mirrordtest exec curl -c curl -- curl -s http://nginx
 # Antwort aus dem CLUSTER (Pod im Namespace mirrordtest)
@@ -333,7 +333,7 @@ MIRRORD_REGISTRY=registry.internal/mirrord mirrord verify-config mirrord-custom-
 MIRRORD_REGISTRY=registry.internal/mirrord mirrord container -f mirrord-custom-image.json -- \
   docker run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-    nginx:1.27
+    nginxinc/nginx-unprivileged:1.30-trixie
 ```
 
 Kontrollieren, welche Images verwendet wurden:
@@ -368,7 +368,7 @@ KUBECONFIG=/tmp/kc-mirrord kubectl auth can-i --list -n mirrordtest
 KUBECONFIG=/tmp/kc-mirrord mirrord container -f mirrord.json -- \
   docker run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro" \
-    nginx:1.27
+    nginxinc/nginx-unprivileged:1.30-trixie
 ```
 
 Die Role gilt nur in `mirrordtest`. Deshalb muss `agent.namespace` auf `mirrordtest`
@@ -463,7 +463,7 @@ mirrord verify-config openshift/mirrord-openshift.json
 mirrord container -f openshift/mirrord-openshift.json -- \
   podman run --rm --name nginx-local \
     -v "$PWD/local/index.html:/usr/share/nginx/html/index.html:ro,Z" \
-    docker.io/library/nginx:1.27
+    docker.io/nginxinc/nginx-unprivileged:1.30-trixie
 ```
 
 Auf RHEL/Fedora-Rechnern ist meist Podman statt Docker installiert. `:Z` setzt das

@@ -17,9 +17,16 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:1.27-alpine
+          image: nginxinc/nginx-unprivileged:1.30-trixie
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           resources:
             requests:
               cpu: 50m
