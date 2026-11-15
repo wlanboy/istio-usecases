@@ -1,0 +1,30 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.13.8"
+          enable-cache: true
+
+      - name: Abhängigkeiten installieren
+        run: uv sync --locked
+
+      # uv run setzt .venv/bin vorn in den PATH, damit findet test.sh dort python3 mit PyYAML.
+      - name: VirtualService-Analyse offline testen
+        run: uv run vs/test.sh --offline
+
+      - name: Typprüfung
+        run: uv run pyright
